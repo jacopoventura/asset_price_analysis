@@ -291,7 +291,7 @@ class PriceAnalysis:
         weekly_positive_if_monday_positive_dict["Case"] = "Week if Monday positive: positive"
         weekly_negative_if_monday_positive_dict["Case"] = "Week if Monday positive: negative"
         weekly_positive_if_monday_negative_dict["Case"] = "Week if Monday negative: positive"
-        weekly_negative_if_monday_negative_dict["Case"] = "Week if Monday negative: positive"
+        weekly_negative_if_monday_negative_dict["Case"] = "Week if Monday negative: negative"
         # noinspection PyTypeChecker
         self.__weekly_change_monday_conditional_df = pd.DataFrame.from_dict([weekly_positive_if_monday_positive_dict,
                                                                              weekly_negative_if_monday_positive_dict,
