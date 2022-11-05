@@ -33,6 +33,7 @@ class PriceAnalysis:
         self.__WEEK_MAX_CHANGE_PCT = 6
         self.__MONTH_MAX_CHANGE_PCT = 12
         self.__NUMBER_WEEKS_PER_YEAR = 52
+        self.__DTE_LONG = 23
 
         self.__plot_column_width = 0.75
 
@@ -48,13 +49,13 @@ class PriceAnalysis:
             self.__years_analysis = str(int(start.year)) + '-' + str(int(end.year))
         self.__filename = self.__PATH_TO_HTML + self.__ticker + '_' + self.__years_analysis + '_update' + self.__date_end.strftime('%d%m%Y') + '.html'
 
-        self.__price_history_df = {}
-        self.__weekly_change_monday_to_friday = {}
-        self.__weekly_change_friday_to_friday = {}
-        self.__weekly_change_df = {}
-        self.__weekly_change_monday_conditional_df = {}
-        self.__weekly_dte_change_df = {}
-        self.__monthly_dte_change_df = {}
+        self.__price_history_df = None
+        self.__weekly_change_monday_to_friday = None
+        self.__weekly_change_friday_to_friday = None
+        self.__weekly_change_df = None
+        self.__weekly_change_monday_conditional_df = None
+        self.__weekly_dte_change_df = None
+        self.__monthly_dte_change_df = None
 
         self.__years_list = []
         self.__weekly_change_first_day_positive = []
@@ -77,7 +78,7 @@ class PriceAnalysis:
                                                                  self.__WEEK_MAX_CHANGE_PCT)
 
         # Step 3: calculate monthly statistics
-        self.__monthly_dte_change_df = self.__calc_DTE_statistics(self.__MONTH_TRADING_DAYS,
+        self.__monthly_dte_change_df = self.__calc_DTE_statistics(self.__DTE_LONG,
                                                                   self.__MONTH_MAX_CHANGE_PCT)
 
         # Step 4: make html report
@@ -108,6 +109,7 @@ class PriceAnalysis:
         Write output file with all the statistics.
         """
 
+        num_trading_days = int(len(self._PriceAnalysis__price_history_df.index))
         with open(
                 os.path.expanduser(self.__filename),
                 'w') as fo:
@@ -125,7 +127,9 @@ class PriceAnalysis:
             fo.write('<br/>')
             fo.write(self.__weekly_change_monday_conditional_df.to_html().replace('<td>', '<td align="center">'))
             fo.write('<br/>' + '<br/>' + "Tabelle su variazione " + str(self.__MONTH_TRADING_DAYS))
-            fo.write("DTE (giorni di trading effettivi, Daily OPEN)")
+            fo.write(" DTE (giorni di trading effettivi, Daily OPEN)")
+            fo.write("<br>" + str(num_trading_days) + " giorni analizzati (ultima OPEN il ")
+            fo.write(self._PriceAnalysis__price_history_df["Date"][num_trading_days - self.__DTE_LONG].strftime('%d/%m/%Y') + ")")
             fo.write('<br/>')
             fo.write(self.__monthly_dte_change_df.to_html().replace('<td>', '<td align="center">'))
             fig = self.__make_plot_weekly_change()

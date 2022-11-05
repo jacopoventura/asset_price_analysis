@@ -3,8 +3,7 @@ import timeit
 from helper.data_analysis import PriceAnalysis
 
 # TO DO:
-# add last day of DTE evaluation
-# integrate git command line in pycharm
+# learn git rebase for versioning
 # add month label xaxes plot weekly variation
 # plot 23DTE change barplot
 # set default input variable values
