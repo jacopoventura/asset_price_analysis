@@ -196,9 +196,13 @@ class PriceAnalysis:
                    )
         ])
 
+        layout = go.Layout(title='CLE vs Model',
+                           yaxis=dict(title='Crude and Model'),
+                           yaxis2=dict(title='Moddel Difference',
+                                       overlaying='y',
+                                       side='right'))
+
         # Change the bar mode
-        fig.update_layout(title="<br><b>Weekly change<b>",
-                          barmode='group')
         fig.update_yaxes(title_text="change [%]")
         fig.update_xaxes(title_text="week count")
 
@@ -339,7 +343,7 @@ class PriceAnalysis:
 
     def __calc_weekly_movement(self):
         """
-        Calculate the weekly movement of the ticker.
+        Calculate the weekly movement of the ticker. Weekdays shall be at least 2.
         :return: list with the weekly changes
         :rtype: list
         """
@@ -352,19 +356,23 @@ class PriceAnalysis:
                 week_df = self.__price_history_df.loc[self.__price_history_df["Week number"] == week_number]
                 first_day = np.min(week_df["Weekday"])
                 last_day = np.max(week_df["Weekday"])
-                week_open = week_df[week_df["Weekday"] == first_day].iloc[0]["Open"]
-                week_close = week_df[week_df["Weekday"] == last_day].iloc[0]["Close"]
-                # calculate weekly changes
-                change_monday_to_friday_list.append(100.0 * (week_close - week_open) / week_open)
+                # a week with 1 day does not count
+                if first_day != last_day:
+                    week_open = week_df[week_df["Weekday"] == first_day].iloc[0]["Open"]
+                    week_close = week_df[week_df["Weekday"] == last_day].iloc[0]["Close"]
+                    # calculate weekly changes
+                    change_monday_to_friday_list.append(100.0 * (week_close - week_open) / week_open)
         return change_monday_to_friday_list
 
     def __calc_weekly_friday_to_friday_movement(self):
         """
-        Calculate the weekly movement of the ticker.
+        Calculate the weekly movement of the ticker (last day to last day).
+        The current week shall have at least 4 weekdays.
         :return: list with the weekly changes
         :rtype: list
         """
 
+        minimum_number_weekdays_current_week = 4
         change_friday_to_friday_list = []
         for year in self.__years_list:
             number_of_weeks_in_the_year = self.__calc_number_of_weeks_in_year(year)
@@ -373,12 +381,13 @@ class PriceAnalysis:
                 week_df = self.__price_history_df.loc[self.__price_history_df["Week number"] == week_number]
                 previous_week_df = self.__price_history_df.loc[self.__price_history_df["Week number"] == week_number - 1]
                 last_day = np.max(week_df["Weekday"])
-                last_day_previous_week = np.max(previous_week_df["Weekday"])
-                week_close = week_df[week_df["Weekday"] == last_day].iloc[0]["Close"]
-                previous_week_close = previous_week_df[previous_week_df["Weekday"] == last_day_previous_week].iloc[0][
-                    "Close"]
-                # calculate weekly changes
-                change_friday_to_friday_list.append(100.0 * (week_close - previous_week_close) / previous_week_close)
+                if last_day >= minimum_number_weekdays_current_week:
+                    last_day_previous_week = np.max(previous_week_df["Weekday"])
+                    week_close = week_df[week_df["Weekday"] == last_day].iloc[0]["Close"]
+                    previous_week_close = previous_week_df[previous_week_df["Weekday"] == last_day_previous_week].iloc[0][
+                        "Close"]
+                    # calculate weekly changes
+                    change_friday_to_friday_list.append(100.0 * (week_close - previous_week_close) / previous_week_close)
         return change_friday_to_friday_list
 
     def __calc_change_DTE(self, dte):

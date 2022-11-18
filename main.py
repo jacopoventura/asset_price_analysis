@@ -3,11 +3,8 @@ import timeit
 from helper.data_analysis import PriceAnalysis
 
 # TO DO:
-# learn git rebase for versioning
 # add month label xaxes plot weekly variation
 # plot 23DTE change barplot
-# set default input variable values
-# handle weeks with 1 day
 # optimize class
 # make product-level code (Error handling; handle week with 1 day)
 # https://stackoverflow.com/questions/193161/what-is-the-best-project-structure-for-a-python-application
