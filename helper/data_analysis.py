@@ -1,3 +1,4 @@
+import math
 import numpy as np
 import os
 import pandas as pd
@@ -47,7 +48,7 @@ class PriceAnalysis:
         self.__date_start = start
         self.__date_end = end
         self.__number_of_days = (end - start).days
-        self.__number_of_weeks = self.__number_of_days // 7
+        self.__number_of_weeks = math.ceil(self.__number_of_days / 7)
 
         self.__PATH_TO_HTML = path_to_report
         if start.year == end.year:
@@ -129,7 +130,7 @@ class PriceAnalysis:
 
         self.__date_start = start
         self.__date_end = end
-        self.__number_of_weeks = (end - start).days // 7
+        self.__number_of_weeks = math.ceil((end - start).days / 7)
 
         if start.year == end.year:
             self.__years_analysis = str(int(start.year))
@@ -210,14 +211,14 @@ class PriceAnalysis:
 
         # Make bar plot
         fig = go.Figure(data=[
-            go.Bar(name='positive (1st day +)',
+            go.Bar(name='positive (day 1:+)',
                    x=week_positive_if_first_positive["week"],
                    y=week_positive_if_first_positive["change"],
                    marker_color='green',
                    marker_line_color='green',
                    width=self.__plot_column_width
                    ),
-            go.Bar(name='positive (1st day -)',
+            go.Bar(name='positive (day 1:-)',
                    x=week_positive_if_first_negative["week"],
                    y=week_positive_if_first_negative["change"],
                    marker_color='green',
@@ -225,14 +226,14 @@ class PriceAnalysis:
                    marker_pattern_shape="/",
                    width=self.__plot_column_width
                    ),
-            go.Bar(name='negative (1st day -)',
+            go.Bar(name='negative (day 1:-)',
                    x=week_negative_if_first_negative["week"],
                    y=week_negative_if_first_negative["change"],
                    marker_color='red',
                    marker_line_color='red',
                    width=self.__plot_column_width
                    ),
-            go.Bar(name='negative (1st day +)',
+            go.Bar(name='negative (day 1:+)',
                    x=week_negative_if_first_positive["week"],
                    y=week_negative_if_first_positive["change"],
                    marker_color='red',
@@ -242,15 +243,27 @@ class PriceAnalysis:
                    )
         ])
 
-        layout = go.Layout(title='CLE vs Model',
-                           yaxis=dict(title='Crude and Model'),
-                           yaxis2=dict(title='Moddel Difference',
-                                       overlaying='y',
-                                       side='right'))
+        week_dates = []
+        week_id = list(range(1, self.__number_of_weeks+1))
+        for week_number in week_id:
+            week_df = self.__price_history_df.loc[self.__price_history_df["Week number"] == week_number]
+            first_day = week_df["Date"].iloc[0].strftime('%d/%m')
+            last_day = week_df["Date"].iloc[-1].strftime('%d/%m - %Y')
+            week_dates.append(first_day + "-" + last_day)
+
+        fig.update_layout(
+            title="<b>Weekly change<b>",
+            title_x=0.5,
+            xaxis=dict(
+                tickmode='array',
+                tickvals=week_id,
+                ticktext=week_dates
+            )
+        )
 
         # Change the bar mode
         fig.update_yaxes(title_text="change [%]")
-        fig.update_xaxes(title_text="week count")
+        fig.update_xaxes(title_text="week")
 
         return fig
 
@@ -381,16 +394,14 @@ class PriceAnalysis:
                 week_counter += 1
                 # filter the selected week and the previous week
                 week_df = self.__price_history_df.loc[self.__price_history_df["Week number"] == week_number]
-                first_day = np.min(week_df["Weekday"])
-                last_day = np.max(week_df["Weekday"])
-                week_open = week_df[week_df["Weekday"] == first_day].iloc[0]["Open"]
-                week_close = week_df[week_df["Weekday"] == last_day].iloc[0]["Close"]
+                #first_day = np.min(week_df["Weekday"])
+                #last_day = np.max(week_df["Weekday"])
+                week_open = week_df["Open"].iloc[0]
+                week_close = week_df["Close"].iloc[-1]
                 first_day_change = 0
                 if week_open != 0:
                     week_change = 100.0 * (week_close - week_open) / week_open
-                    first_day_change = 100.0 * (
-                            week_df[week_df["Weekday"] == first_day].iloc[0]["Close"] - week_open
-                    ) / week_open
+                    first_day_change = 100.0 * (week_df["Close"].iloc[0] - week_open) / week_open
                 if first_day_change > 0:
                     self.__weekly_change_first_day_positive.append(week_change)
                     self.__weekly_change_first_day_positive_week_count.append(week_counter)
@@ -411,19 +422,12 @@ class PriceAnalysis:
             for week_number in range(week_range_in_the_year[0], week_range_in_the_year[1] + 1):
                 # filter the selected week and the previous week
                 week_df = self.__price_history_df.loc[self.__price_history_df["Week number"] == week_number]
-                first_day = np.min(week_df["Weekday"])
-                last_day = np.max(week_df["Weekday"])
-                # a week with 1 day does not count
-                if first_day != last_day:
-                    week_open = week_df[week_df["Weekday"] == first_day].iloc[0]["Open"]
-                    week_close = week_df[week_df["Weekday"] == last_day].iloc[0]["Close"]
-                    # calculate weekly changes
-                    change = 0
-                    if week_open != 0:
-                        change = 100.0 * (week_close - week_open) / week_open
+                week_open = week_df["Open"].iloc[0]
+                week_close = week_df["Close"].iloc[-1]
+                change = 0
+                if week_open != 0:
+                    change = 100.0 * (week_close - week_open) / week_open
                     change_monday_to_friday_list.append(change)
-                else:
-                    self.__week_one_weekday_list.append((week_number, year))
         return change_monday_to_friday_list
 
     def __calc_weekly_friday_to_friday_movement(self):
@@ -434,7 +438,6 @@ class PriceAnalysis:
         :rtype: list
         """
 
-        minimum_number_weekdays_current_week = 4
         change_friday_to_friday_list = []
         for year in self.__years_list:
             weeks_in_the_year = self.__calc_number_of_weeks_in_year(year)
@@ -443,18 +446,13 @@ class PriceAnalysis:
                 week_df = self.__price_history_df.loc[self.__price_history_df["Week number"] == week_number]
                 previous_week_df = self.__price_history_df.loc[
                     self.__price_history_df["Week number"] == week_number - 1]
-                last_day = np.max(week_df["Weekday"])
-                if last_day >= minimum_number_weekdays_current_week:
-                    last_day_previous_week = np.max(previous_week_df["Weekday"])
-                    week_close = week_df[week_df["Weekday"] == last_day].iloc[0]["Close"]
-                    previous_week_close = \
-                        previous_week_df[previous_week_df["Weekday"] == last_day_previous_week].iloc[0][
-                            "Close"]
-                    # calculate weekly changes
-                    change = 0
-                    if previous_week_close != 0:
-                        change = 100.0 * (week_close - previous_week_close) / previous_week_close
-                    change_friday_to_friday_list.append(change)
+                week_close = week_df["Close"].iloc[-1]
+                previous_week_close = previous_week_df["Close"].iloc[-1]
+                # calculate weekly changes
+                change = 0
+                if previous_week_close != 0:
+                    change = 100.0 * (week_close - previous_week_close) / previous_week_close
+                change_friday_to_friday_list.append(change)
         return change_friday_to_friday_list
 
     def __calc_change_DTE(self, dte):
