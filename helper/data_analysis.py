@@ -7,6 +7,7 @@ import plotly.graph_objects as go
 import sys
 
 from datetime import datetime
+from scipy.stats import t
 
 # Graphical options for dataframe print
 pd.set_option('display.width', 400)
@@ -42,7 +43,7 @@ class PriceAnalysis:
         self.__DTE_LONG = 23
         self.__STEP = 1  # step to calculate the cumulative distribution
 
-        self.__plot_column_width = 0.75
+        self.__PLOT_COLUMN_WIDTH = 0.75
 
         self.__ticker = ticker
         self.__date_start = start
@@ -68,6 +69,7 @@ class PriceAnalysis:
         self.__weekly_change_monday_conditional_df = None
         self.__weekly_dte_change_df = None
         self.__monthly_dte_change_df = None
+        self.__change_list_monthly_dte_for_plot_df = None
 
         self.__week_one_weekday_list = []
         self.__years_list = []
@@ -141,6 +143,34 @@ class PriceAnalysis:
                                               + '_update' + self.__date_end.strftime('%d%m%Y') \
                                               + '.html'
 
+    def query_price(self):
+        """
+        Query data of the ticker for the input timerange from the source database.
+        """
+
+        try:
+            self.__price_history_df = web.DataReader(self.__ticker,
+                                                     self.__SOURCE,
+                                                     self.__date_start,
+                                                     self.__date_end)
+        except Exception as e:
+            print('Cannot query historical data:', e)
+            sys.exit(1)  # stop the main function with exit code 1
+
+        weekday_list = []
+        weeknumber_list = []
+        years_list = []
+        for index, row in self.__price_history_df.iterrows():
+            d = pd.to_datetime(index)
+            weekday_list.append(d.weekday())
+            weeknumber_list.append(d.isocalendar()[1])
+            years_list.append(d.year)
+        self.__price_history_df.insert(0, "Weekday", weekday_list)
+        self.__price_history_df.insert(1, "Week number", weeknumber_list)
+        self.__price_history_df.insert(2, "Year", years_list)
+        self.__price_history_df = self.__price_history_df.reset_index(level=0)
+        self.__years_list = list(set(years_list))  # get unique years
+
     def __write_html(self):
         """
         Write output file with all the statistics.
@@ -173,9 +203,22 @@ class PriceAnalysis:
                         '%d/%m/%Y') + ")")
                     fo.write('<br/>')
                     fo.write(self.__monthly_dte_change_df.to_html().replace('<td>', '<td align="center">'))
+                    figure_dte_change, negative_change_stats = self.__make_plot_monthly_change()
+                    fo.write('Statistiche ' + str(self.__MONTH_TRADING_DAYS) + ' DTE negative change:')
+                    fo.write('<br/>')
+                    fo.write('Media: ' + '{:.1f}'.format(negative_change_stats[0]) +
+                             '%, intervallo confidenza: [' + '{:.1f}'.format(negative_change_stats[2]) + '; ' +
+                             '{:.1f}'.format(negative_change_stats[3]) + ']')
+                    fo.write('<br/>')
+                    fo.write('Deviazione standard: ' + '{:.1f}'.format(negative_change_stats[1]) + '%')
                 if self.__number_of_weeks > 0:
-                    fig = self.__make_plot_weekly_change()
-                    fo.write((fig.to_html(full_html=False, include_plotlyjs='cdn')))
+                    fo.write('<br/>')
+                    figure_weekly_change = self.__make_plot_weekly_change()
+                    fo.write((figure_weekly_change.to_html(full_html=False, include_plotlyjs='cdn')))
+                if self.__number_of_days > self.__MONTH_TRADING_DAYS:
+                    fo.write('<br/>')
+                    fo.write((figure_dte_change.to_html(full_html=False, include_plotlyjs='cdn')))
+
         except Exception as e:
             print('Cannot create the html file:', e)
             sys.exit(1)  # stop the main function with exit code 1
@@ -217,7 +260,7 @@ class PriceAnalysis:
                        color='green',
                        line_color='green'
                    ),
-                   width=self.__plot_column_width
+                   width=self.__PLOT_COLUMN_WIDTH
                    ),
             go.Bar(name='positive (day 1:-)',
                    x=week_positive_if_first_negative["week"],
@@ -227,7 +270,7 @@ class PriceAnalysis:
                        line_color='red',
                        pattern_shape="/"
                    ),
-                   width=self.__plot_column_width
+                   width=self.__PLOT_COLUMN_WIDTH
                    ),
             go.Bar(name='negative (day 1:-)',
                    x=week_negative_if_first_negative["week"],
@@ -236,7 +279,7 @@ class PriceAnalysis:
                        color='red',
                        line_color='red'
                    ),
-                   width=self.__plot_column_width
+                   width=self.__PLOT_COLUMN_WIDTH
                    ),
             go.Bar(name='negative (day 1:+)',
                    x=week_negative_if_first_positive["week"],
@@ -246,7 +289,7 @@ class PriceAnalysis:
                        line_color='green',
                        pattern_shape="/"
                    ),
-                   width=self.__plot_column_width
+                   width=self.__PLOT_COLUMN_WIDTH
                    )
         ])
 
@@ -274,33 +317,85 @@ class PriceAnalysis:
 
         return fig
 
-    def query_price(self):
+    def __make_plot_monthly_change(self):
         """
-        Query data of the ticker for the input timerange from the source database.
+        Make the bar plot of the monthly change of the asset.
+        :return: plotly figure
+        :rtype: Figure
+        :return: list of negative statistics
+        :rtype: list
         """
 
-        try:
-            self.__price_history_df = web.DataReader(self.__ticker,
-                                                     self.__SOURCE,
-                                                     self.__date_start,
-                                                     self.__date_end)
-        except Exception as e:
-            print('Cannot query historical data:', e)
-            sys.exit(1)  # stop the main function with exit code 1
+        month_positive = {"day num": [], "change": []}
+        month_negative = {"day num": [], "change": []}
 
-        weekday_list = []
-        weeknumber_list = []
-        years_list = []
-        for index, row in self.__price_history_df.iterrows():
-            d = pd.to_datetime(index)
-            weekday_list.append(d.weekday())
-            weeknumber_list.append(d.isocalendar()[1])
-            years_list.append(d.year)
-        self.__price_history_df.insert(0, "Weekday", weekday_list)
-        self.__price_history_df.insert(1, "Week number", weeknumber_list)
-        self.__price_history_df.insert(2, "Year", years_list)
-        self.__price_history_df = self.__price_history_df.reset_index(level=0)
-        self.__years_list = list(set(years_list))  # get unique years
+        for idx, change in enumerate(self.__change_list_monthly_dte_for_plot_df["change_list"]):
+            if change > 0:
+                month_positive["change"].append(change)
+                month_positive["day num"].append(idx)
+            else:
+                month_negative["change"].append(change)
+                month_negative["day num"].append(idx)
+
+        # Make bar plot
+        fig = go.Figure(data=[
+            go.Bar(name='positive change',
+                   x=month_positive["day num"],
+                   y=month_positive["change"],
+                   marker=dict(
+                       color='green',
+                       line_color='green'
+                   ),
+                   width=self.__PLOT_COLUMN_WIDTH
+                   ),
+            go.Bar(name='negative change',
+                   x=month_negative["day num"],
+                   y=month_negative["change"],
+                   marker=dict(
+                       color='red',
+                       line_color='red'
+                   ),
+                   width=self.__PLOT_COLUMN_WIDTH
+                   )
+        ])
+
+        # calculate statistics for negative change
+        confidence_interval = self.__mean_confidence_interval(month_negative["change"])
+        fig.update_layout(
+            title="<b>" + str(self.__MONTH_TRADING_DAYS) + " DTE change<b>",
+            title_x=0.5,
+            xaxis=dict(
+                tickmode='array',
+                tickvals=list(range(1, len(self.__change_list_monthly_dte_for_plot_df["date range"]))),
+                ticktext=self.__change_list_monthly_dte_for_plot_df["date range"]
+            )
+        )
+
+        # Change the bar mode
+        fig.update_yaxes(title_text="change [%]")
+        fig.update_xaxes(title_text="day")
+
+        return fig, confidence_interval
+
+    @staticmethod
+    def __mean_confidence_interval(data, confidence=0.95):
+        """
+        Calculate the mean and confidence interval of a list of data.
+        :param data: list of data
+        :type data: list
+        :param confidence: confidence level
+        :type confidence: float
+        :return: list of [mean, standard deviation, lower bound confidence interval, upper bound confidence interval]
+        :rtype: list
+        """
+        n = len(data)
+        dof = n - 1
+        mean, standard_deviation = np.mean(data), np.std(data)
+        t_crit = np.abs(t.ppf((1 - confidence) / 2., dof))
+        return [mean,
+                standard_deviation,
+                mean - standard_deviation*t_crit/np.sqrt(n),
+                mean + standard_deviation*t_crit/np.sqrt(n)]
 
     def __calc_DTE_statistics(self, dte, max_change_pct):
         """
@@ -313,7 +408,10 @@ class PriceAnalysis:
         :rtype: pd.dataframe
         """
 
-        change_list = self.__calc_change_DTE(dte)
+        change_list_df = self.__calc_change_DTE(dte)
+        if dte == self.__MONTH_TRADING_DAYS:
+            self.__change_list_monthly_dte_for_plot_df = change_list_df
+        change_list = change_list_df["change_list"]
         change_positive, change_negative = self.__calc_distribution(change_list, max_change_pct, self.__STEP)
         change_positive["Case"] = "Daily to " + str(int(dte)) + "DTE: positive"
         change_negative["Case"] = "Daily to " + str(int(dte)) + "DTE: negative"
@@ -466,19 +564,22 @@ class PriceAnalysis:
         Calculate the price change (close to close) given an input DTE (Date To End) of every day of the price data.
         :param dte: Date To End (effective trading days until option expiration)
         :type dte: int
-        :return: list with the DTE changes for each day of the selected period
-        :rtype: list"""
+        :return: dataframe with the DTE changes for each day of the selected period
+        :rtype: pd.dataframe"""
 
         num_data = len(self.__price_history_df.index)
         change_list = []
+        date_range = []
         for idx in range(0, num_data - dte):
             start = self.__price_history_df.iloc[idx]["Close"]
             end = self.__price_history_df.iloc[idx + dte]["Close"]
+            date_range.append(self.__price_history_df.iloc[idx]["Date"].strftime('%d/%m - ') +
+                              self.__price_history_df.iloc[idx + dte]["Date"].strftime('%d/%m/%Y'))
             change = 0
             if start != 0:
                 change = 100.0 * (end - start) / start
             change_list.append(change)
-        return change_list
+        return {"change_list": change_list, "date range": date_range}
 
     @staticmethod
     def __calc_positive_negative_change_lists(change_list):

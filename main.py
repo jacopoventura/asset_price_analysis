@@ -2,10 +2,8 @@ import datetime
 import timeit
 from helper.data_analysis import PriceAnalysis
 
-# TO DO:
-# make product-level code: https://www.zenesys.com/blog/python-coding-standards-best-practices
-# plot 23DTE change barplot
-# https://stackoverflow.com/questions/193161/what-is-the-best-project-structure-for-a-python-application
+# product-level code: https://www.zenesys.com/blog/python-coding-standards-best-practices
+# structure: https://stackoverflow.com/questions/193161/what-is-the-best-project-structure-for-a-python-application
 
 
 TICKER = "SPY"
@@ -22,6 +20,5 @@ if __name__ == '__main__':
     end = datetime.datetime.now()  # Year, Month, Day
     spy = PriceAnalysis(TICKER, start, end, PATH_TO_REPORT)
     spy.run()
-    mdm  = spy.get_price_history()
     elapsed = timeit.default_timer() - t0
     print(f'Execution time: {elapsed:.2}s')
