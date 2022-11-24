@@ -56,10 +56,10 @@ class PriceAnalysis:
         else:
             self.__years_analysis = str(int(start.year)) + '-' + str(int(end.year))
         self.__filename = self.__PATH_TO_HTML + self.__ticker \
-                          + '_' + self.__date_start.strftime('%d%m%Y') \
-                          + '_to_' \
-                          + self.__date_end.strftime('%d%m%Y') \
-                          + '.html'
+                                              + '_' + self.__date_start.strftime('%d%m%Y') \
+                                              + '_to_' \
+                                              + self.__date_end.strftime('%d%m%Y') \
+                                              + '.html'
 
         self.__price_history_df = None
         self.__weekly_change_monday_to_friday = None
@@ -136,22 +136,21 @@ class PriceAnalysis:
             self.__years_analysis = str(int(start.year))
         else:
             self.__years_analysis = str(int(start.year)) + '-' + str(int(end.year))
-        self.__filename = self.__PATH_TO_HTML \
-                          + self.__ticker + '_' \
-                          + self.__years_analysis \
-                          + '_update' + self.__date_end.strftime('%d%m%Y') \
-                          + '.html'
+        self.__filename = self.__PATH_TO_HTML + self.__ticker + '_' \
+                                              + self.__years_analysis \
+                                              + '_update' + self.__date_end.strftime('%d%m%Y') \
+                                              + '.html'
 
     def __write_html(self):
         """
         Write output file with all the statistics.
         """
 
-        num_trading_days = int(len(self._PriceAnalysis__price_history_df.index))
+        num_trading_days = int(len(self.__price_history_df.index))
         try:
-            with open(
-                    os.path.expanduser(self.__filename),
-                    'w') as fo:
+            with open(os.path.expanduser(self.__filename), 'w') as fo:
+                fo.write("<html>\n<head>\n<title> \nOutput Data in an HTML file \
+                          </title>\n</head> <body><h1><center>" + self.__ticker + "</center></h1>\n</body></html>")
                 fo.write("Statistiche " + self.__ticker + " " + self.__years_analysis)
                 fo.write("<br/>Periodo: " + self.__date_start.strftime('%d/%m/%Y'))
                 fo.write(" al " + self.__date_end.strftime('%d/%m/%Y'))
@@ -170,7 +169,7 @@ class PriceAnalysis:
                     fo.write('<br/>' + '<br/>' + "Tabelle su variazione " + str(self.__MONTH_TRADING_DAYS))
                     fo.write(" DTE (giorni di trading effettivi, Daily OPEN)")
                     fo.write("<br>" + str(num_trading_days) + " giorni analizzati (ultima OPEN il ")
-                    fo.write(self._PriceAnalysis__price_history_df["Date"][num_trading_days - self.__DTE_LONG].strftime(
+                    fo.write(self.__price_history_df["Date"][num_trading_days - self.__DTE_LONG].strftime(
                         '%d/%m/%Y') + ")")
                     fo.write('<br/>')
                     fo.write(self.__monthly_dte_change_df.to_html().replace('<td>', '<td align="center">'))
@@ -214,31 +213,39 @@ class PriceAnalysis:
             go.Bar(name='positive (day 1:+)',
                    x=week_positive_if_first_positive["week"],
                    y=week_positive_if_first_positive["change"],
-                   marker_color='green',
-                   marker_line_color='green',
+                   marker=dict(
+                       color='green',
+                       line_color='green'
+                   ),
                    width=self.__plot_column_width
                    ),
             go.Bar(name='positive (day 1:-)',
                    x=week_positive_if_first_negative["week"],
                    y=week_positive_if_first_negative["change"],
-                   marker_color='green',
-                   marker_line_color='red',
-                   marker_pattern_shape="/",
+                   marker=dict(
+                       color='green',
+                       line_color='red',
+                       pattern_shape="/"
+                   ),
                    width=self.__plot_column_width
                    ),
             go.Bar(name='negative (day 1:-)',
                    x=week_negative_if_first_negative["week"],
                    y=week_negative_if_first_negative["change"],
-                   marker_color='red',
-                   marker_line_color='red',
+                   marker=dict(
+                       color='red',
+                       line_color='red'
+                   ),
                    width=self.__plot_column_width
                    ),
             go.Bar(name='negative (day 1:+)',
                    x=week_negative_if_first_positive["week"],
                    y=week_negative_if_first_positive["change"],
-                   marker_color='red',
-                   marker_line_color='green',
-                   marker_pattern_shape="/",
+                   marker=dict(
+                       color='red',
+                       line_color='green',
+                       pattern_shape="/"
+                   ),
                    width=self.__plot_column_width
                    )
         ])
@@ -394,11 +401,10 @@ class PriceAnalysis:
                 week_counter += 1
                 # filter the selected week and the previous week
                 week_df = self.__price_history_df.loc[self.__price_history_df["Week number"] == week_number]
-                #first_day = np.min(week_df["Weekday"])
-                #last_day = np.max(week_df["Weekday"])
                 week_open = week_df["Open"].iloc[0]
                 week_close = week_df["Close"].iloc[-1]
                 first_day_change = 0
+                week_change = 0
                 if week_open != 0:
                     week_change = 100.0 * (week_close - week_open) / week_open
                     first_day_change = 100.0 * (week_df["Close"].iloc[0] - week_open) / week_open
@@ -427,7 +433,7 @@ class PriceAnalysis:
                 change = 0
                 if week_open != 0:
                     change = 100.0 * (week_close - week_open) / week_open
-                    change_monday_to_friday_list.append(change)
+                change_monday_to_friday_list.append(change)
         return change_monday_to_friday_list
 
     def __calc_weekly_friday_to_friday_movement(self):
