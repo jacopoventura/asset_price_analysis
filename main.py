@@ -17,7 +17,7 @@ if __name__ == '__main__':
 
     # Query data from yahoo finance
     start = datetime.datetime(2022, 1, 1)  # Year, Month, Day
-    end = datetime.datetime.now()  # Year, Month, Day
+    end = datetime.datetime(2022, 12, 30)  # Year, Month, Day
     spy = PriceAnalysis(TICKER, start, end, PATH_TO_REPORT)
     spy.run()
     elapsed = timeit.default_timer() - t0

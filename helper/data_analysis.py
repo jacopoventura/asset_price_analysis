@@ -33,7 +33,7 @@ class PriceAnalysis:
         :type path_to_report: str
         """
 
-        self.__SOURCE = 'yahoo'
+        self.__SOURCE = 'stooq'
 
         self.__WEEK_TRADING_DAYS = 5
         self.__MONTH_TRADING_DAYS = 23
@@ -42,6 +42,7 @@ class PriceAnalysis:
         self.__NUMBER_WEEKS_PER_YEAR = 52
         self.__DTE_LONG = 23
         self.__STEP = 1  # step to calculate the cumulative distribution
+        self.__BINS_DAILY_CHANGE = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]
 
         self.__PLOT_COLUMN_WIDTH = 0.75
 
@@ -63,6 +64,7 @@ class PriceAnalysis:
                                               + '.html'
 
         self.__price_history_df = None
+        self.__daily_change_df = None
         self.__weekly_change_monday_to_friday = None
         self.__weekly_change_friday_to_friday = None
         self.__weekly_change_df = None
@@ -70,6 +72,8 @@ class PriceAnalysis:
         self.__weekly_dte_change_df = None
         self.__monthly_dte_change_df = None
         self.__change_list_monthly_dte_for_plot_df = None
+        self.__day_gapup_df = None
+        self.__day_gapdown_df = None
 
         self.__week_one_weekday_list = []
         self.__years_list = []
@@ -77,6 +81,8 @@ class PriceAnalysis:
         self.__weekly_change_first_day_negative = []
         self.__weekly_change_first_day_positive_week_count = []
         self.__weekly_change_first_day_negative_week_count = []
+        self.__day_positive_close = []
+        self.__day_negative_close = []
 
     def run(self):
         """
@@ -92,19 +98,22 @@ class PriceAnalysis:
             print(nan_date_list)
             return
 
-        # Step 2: calculate weekly statistics
+        # Step 2: calculate daily statistics
+        self.__calc_daily_statistics()
+
+        # Step 3: calculate weekly statistics
         self.__calc_weekly_statistics()
         self.__calc_weekly_conditional_statistics()
         if self.__number_of_days >= self.__WEEK_TRADING_DAYS:
             self.__weekly_dte_change_df = self.__calc_DTE_statistics(self.__WEEK_TRADING_DAYS,
                                                                      self.__WEEK_MAX_CHANGE_PCT)
 
-        # Step 3: calculate monthly statistics
+        # Step 4: calculate monthly statistics
         if self.__number_of_days >= self.__DTE_LONG:
             self.__monthly_dte_change_df = self.__calc_DTE_statistics(self.__DTE_LONG,
                                                                       self.__MONTH_MAX_CHANGE_PCT)
 
-        # Step 4: make html report
+        # Step 5: make html report
         self.__write_html()
         print("Report written in: " + self.__filename)
 
@@ -120,6 +129,51 @@ class PriceAnalysis:
                 idx_nan = np.argwhere(np.isnan(self.__price_history_df[key].values))
                 return self.__price_history_df[key].iloc(idx_nan).values
         return None
+
+    def __calc_daily_statistics(self):
+        """
+        Calculate cumulative probability of positive and negative days.
+        """
+        self.__calc_day_change_wrt_previous_day()
+        self.__split_for_day_performance()
+        cumulative_prob_daily_positive_dict = self.__calc_cumulative_probability(self.__day_positive_close)
+        cumulative_prob_daily_negative_dict = self.__calc_cumulative_probability(self.__day_negative_close)
+
+        cumulative_prob_daily_positive_dict["frequency [%]"] = \
+            100.0 * len(self.__day_positive_close) / (len(self.__price_history_df) - 1)
+        cumulative_prob_daily_negative_dict["frequency [%]"] = \
+            100.0 * len(self.__day_negative_close) / (len(self.__price_history_df) - 1)
+
+        cumulative_prob_daily_positive_dict["Day"] = "positive"
+        cumulative_prob_daily_negative_dict["Day"] = "negative"
+
+        # noinspection PyTypeChecker
+        self.__daily_change_df = pd.DataFrame.from_dict([cumulative_prob_daily_positive_dict,
+                                                        cumulative_prob_daily_negative_dict
+                                                         ])
+        self.__daily_change_df.set_index("Day", inplace=True)
+        self.__daily_change_df.index.name = None
+
+    def __calc_cumulative_probability(self, input_data):
+        """
+        Calculate the cumulative probability of the input data.
+        :param input_data: data for which the cumulative probability is calculated
+        :return: cumulative_prob_list: list of the cumulative probability
+        """
+        data = np.sort(input_data, kind="stable")
+
+        dict_cumulative_dist = {"frequency [%]": 0}
+        num_days = len(data)
+        if data[0] > 0:
+            for pct in self.__BINS_DAILY_CHANGE:
+                dict_cumulative_dist[str(int(pct*10)/10) + "% change"] = \
+                    100.0 * len([j for j in data if j <= pct]) / num_days
+        else:
+            for pct in self.__BINS_DAILY_CHANGE:
+                dict_cumulative_dist[str(int(pct*10)/10) + "% change"] = \
+                    100.0 * len([j for j in data if j >= -pct]) / num_days
+
+        return dict_cumulative_dist
 
     def update_analysis_period(self, start, end):
         """
@@ -152,7 +206,7 @@ class PriceAnalysis:
             self.__price_history_df = web.DataReader(self.__ticker,
                                                      self.__SOURCE,
                                                      self.__date_start,
-                                                     self.__date_end)
+                                                     self.__date_end, 10)
         except Exception as e:
             print('Cannot query historical data:', e)
             sys.exit(1)  # stop the main function with exit code 1
@@ -168,6 +222,8 @@ class PriceAnalysis:
         self.__price_history_df.insert(0, "Weekday", weekday_list)
         self.__price_history_df.insert(1, "Week number", weeknumber_list)
         self.__price_history_df.insert(2, "Year", years_list)
+        self.__price_history_df.insert(len(self.__price_history_df.keys()), "Open wrt close", 0)
+        self.__price_history_df.insert(len(self.__price_history_df.keys()), "Close wrt close", 0)
         self.__price_history_df = self.__price_history_df.reset_index(level=0)
         self.__years_list = list(set(years_list))  # get unique years
 
@@ -187,6 +243,9 @@ class PriceAnalysis:
                 fo.write(" (" + str(int(self.__number_of_weeks)) + " settimane)")
                 fo.write("<br/>Documento creato il " + datetime.today().strftime('%d/%m/%Y'))
                 fo.write('<br/>' + "Tabelle della probabilita' cumulativa di variazione.")
+                fo.write('<br/>' + '<br/>' + "Tabelle variazione giornaliera (CLOSE rispetto a CLOSE giorno precedente)")
+                fo.write('<br/>')
+                fo.write(self.__daily_change_df.to_html().replace('<td>', '<td align="center">'))
                 fo.write('<br/>' + '<br/>' + "Tabelle su variazione settimanale (Monday OPEN e Friday CLOSE)")
                 fo.write('<br/>')
                 fo.write(self.__weekly_change_df.to_html().replace('<td>', '<td align="center">'))
@@ -421,6 +480,18 @@ class PriceAnalysis:
         change_df.index.name = None
         return change_df
 
+    def __calc_day_change_wrt_previous_day(self):
+        """
+        Calculate open and close change with respect to previous day close.
+        """
+
+        for idx in range(1, len(self.__price_history_df)):
+            previous_day_close = self.__price_history_df.at[idx - 1, "Close"]
+            self.__price_history_df.at[idx, "Open wrt close"] = \
+                100.0 * (self.__price_history_df.at[idx, "Open"] - previous_day_close) / previous_day_close
+            self.__price_history_df.at[idx, "Close wrt close"] = \
+                100.0 * (self.__price_history_df.at[idx, "Close"] - previous_day_close) / previous_day_close
+
     def __calc_weekly_statistics(self):
         """
         Calculate the statistics of the weekly change in the asset price.
@@ -594,6 +665,23 @@ class PriceAnalysis:
         positive_change_list = sorted(list(filter(lambda change: change >= 0.0, change_list)))
         negative_change_list = sorted(list(filter(lambda change: change < 0.0, change_list)))
         return positive_change_list, negative_change_list
+
+    def __split_for_day_performance(self):
+        """
+        Split database according to the daily open and close with respect to the previous close.
+        """
+        # for idx in range(1, len(self.__price_history_df)):
+        # Split for positive and negative day (close vs. close previous day)
+        self.__day_positive_close = \
+            self.__price_history_df.loc[self.__price_history_df["Close wrt close"] > 0]["Close wrt close"].values
+        self.__day_negative_close = \
+            self.__price_history_df.loc[self.__price_history_df["Close wrt close"] < 0]["Close wrt close"].values
+
+        # Split for gap-up and gap-down at opening (vs. close previous day)
+        self.__day_gapup_df = \
+            self.__price_history_df.loc[self.__price_history_df["Open wrt close"] > 0]
+        self.__day_gapdown_df = \
+            self.__price_history_df.loc[self.__price_history_df["Open wrt close"] < 0]
 
     def __calc_distribution(self, change_list, pct_max, step):
         """
