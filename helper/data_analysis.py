@@ -9,18 +9,13 @@ import sys
 from datetime import datetime
 from scipy.stats import t
 
-# Graphical options for dataframe print
-pd.set_option('display.width', 400)
-pd.set_option('display.max_columns', 10)
-pd.options.display.float_format = '{:,.2f}'.format
-
 
 class PriceAnalysis:
     """
     Class to analyze historical pricing data of a specific asset.
     """
 
-    def __init__(self, ticker, start, end, path_to_report):
+    def __init__(self, ticker, start, end, path_to_report, do_plot=False):
         """
         Initialize the class PriceAnalysis with ticker, start and end time for the price analysis.
         :param ticker: ticker of the asset class
@@ -35,6 +30,8 @@ class PriceAnalysis:
 
         self.__SOURCE = 'stooq'
 
+        self.__DO_PLOT = do_plot
+
         self.__WEEK_TRADING_DAYS = 5
         self.__MONTH_TRADING_DAYS = 23
         self.__WEEK_MAX_CHANGE_PCT = 6
@@ -45,6 +42,12 @@ class PriceAnalysis:
         self.__BINS_DAILY_CHANGE = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]
 
         self.__PLOT_COLUMN_WIDTH = 0.75
+
+        self.__STEP_GAP_OPEN = 0.25
+        self.__BIN_CLOSE_PCT = 0.5
+        self.__MAX_GAP = 2.5
+
+        self.__NO__DATA_INDICATOR = "ND"
 
         self.__ticker = ticker
         self.__date_start = start
@@ -74,6 +77,8 @@ class PriceAnalysis:
         self.__change_list_monthly_dte_for_plot_df = None
         self.__day_gapup_df = None
         self.__day_gapdown_df = None
+        self.__stats_positive_gap = {}
+        self.__stats_negative_gap = {}
 
         self.__week_one_weekday_list = []
         self.__years_list = []
@@ -112,6 +117,9 @@ class PriceAnalysis:
         if self.__number_of_days >= self.__DTE_LONG:
             self.__monthly_dte_change_df = self.__calc_DTE_statistics(self.__DTE_LONG,
                                                                       self.__MONTH_MAX_CHANGE_PCT)
+
+        # Step 5: calculate gap-ups and -downs statistics
+        self.__calc_stats_gapup_down()
 
         # Step 5: make html report
         self.__write_html()
@@ -153,6 +161,167 @@ class PriceAnalysis:
                                                          ])
         self.__daily_change_df.set_index("Day", inplace=True)
         self.__daily_change_df.index.name = None
+
+    def __calc_stats_gapup_down(self):
+        """
+        Calculate the statistics of daily gap-ups and gap-downs.
+        :return:
+        """
+        daily_open_pct = self.__price_history_df["Open wrt close"].values
+        daily_close_pct = self.__price_history_df["Close wrt close"].values
+
+        # split between positive and negative openings
+        positive_open = []
+        close_positive_open = []
+        negative_open = []
+        close_negative_open = []
+        for i, gap in enumerate(daily_open_pct):
+            if gap >= 0:
+                positive_open.append(gap)
+                close_positive_open.append(daily_close_pct[i])
+            else:
+                negative_open.append(gap)
+                close_negative_open.append(daily_close_pct[i])
+        min_close_positive_open = np.min(close_positive_open)
+        max_close_positive_open = np.max(close_positive_open)
+        min_close_negative_open = np.min(close_negative_open)
+        max_close_negative_open = np.max(close_negative_open)
+
+        x_cpf_positive_open = []
+        x = int(min_close_positive_open*self.__BIN_CLOSE_PCT)/self.__BIN_CLOSE_PCT+self.__BIN_CLOSE_PCT
+        while x < max_close_positive_open:
+            x_cpf_positive_open.append(x)
+            x += self.__BIN_CLOSE_PCT
+        if x_cpf_positive_open[-1] < max_close_positive_open:
+            x_cpf_positive_open.append(max_close_positive_open)
+        elif x_cpf_positive_open[-1] > max_close_positive_open:
+            x_cpf_positive_open = max_close_positive_open
+
+        x_cpf_negative_open = []
+        x = int(max_close_negative_open*self.__BIN_CLOSE_PCT)/self.__BIN_CLOSE_PCT - self.__BIN_CLOSE_PCT
+        while x > min_close_negative_open:
+            x_cpf_negative_open.append(x)
+            x -= self.__BIN_CLOSE_PCT
+        if x_cpf_negative_open[-1] > min_close_negative_open:
+            x_cpf_negative_open.append(min_close_negative_open)
+        elif x_cpf_negative_open[-1] > min_close_negative_open:
+            x_cpf_negative_open = min_close_negative_open
+
+        gap_positive_list = []
+        gap_negative_list = []
+        x = self.__STEP_GAP_OPEN
+        while x <= self.__MAX_GAP:
+            gap_positive_list.append(x)
+            gap_negative_list.append(-x)
+            x += self.__STEP_GAP_OPEN
+
+        # gap up
+        for gap in gap_positive_list:
+            close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if ((daily_open_pct[i] <= gap) and (daily_open_pct[i] > (
+                    gap-self.__STEP_GAP_OPEN)))]
+            key = "]"+str(gap-self.__STEP_GAP_OPEN)+"; "+str(gap)+"]%"
+            self.__stats_positive_gap["+" + str(gap) + " %"] = {"gap": key}
+            cpf = self.__calc_cpf(close_list, x_cpf_positive_open)
+            for i, close in enumerate(x_cpf_positive_open):
+                self.__stats_positive_gap["+" + str(gap) + " %"]["% " + str(int(close*10)/10)+"%"] = cpf[i]
+
+        # above the max gap considered in the list
+        close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if daily_open_pct[i] > gap_positive_list[-1]]
+        key = ">" + str(gap_positive_list[-1]) + " %"
+        self.__stats_positive_gap[">+" + str(gap_positive_list[-1]) + " %"] = {"gap": key}
+        cpf = self.__calc_cpf(close_list, x_cpf_positive_open)
+        for i, close in enumerate(x_cpf_positive_open):
+            self.__stats_positive_gap[">+" + str(gap_positive_list[-1]) + " %"]["% " + str(int(close * 10) / 10) + "%"] = cpf[i]
+
+        # all positive gap-ups
+        close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if daily_open_pct[i] > 0]
+        key = "positive open %"
+        self.__stats_positive_gap[">0 %"] = {"gap": key}
+        cpf = self.__calc_cpf(close_list, x_cpf_positive_open)
+        for i, close in enumerate(x_cpf_positive_open):
+            self.__stats_positive_gap[">0 %"]["% " + str(int(close * 10) / 10) + "%"] = cpf[i]
+
+            # gap up
+            for gap in gap_positive_list:
+                close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if ((daily_open_pct[i] <= gap) and (daily_open_pct[i] > (
+                        gap - self.__STEP_GAP_OPEN)))]
+                key = "]" + str(gap - self.__STEP_GAP_OPEN) + "; " + str(gap) + "]%"
+                self.__stats_positive_gap["+" + str(gap) + " %"] = {"gap": key}
+                if close_list:
+                    cpf = self.__calc_cpf(close_list, x_cpf_positive_open)
+                else:
+                    cpf = [self.__NO__DATA_INDICATOR] * len(x_cpf_positive_open)
+                for idx, close_pct in enumerate(x_cpf_positive_open):
+                    self.__stats_positive_gap["+" + str(gap) + " %"]["% " + str(int(close_pct * 10) / 10) + "%"] = cpf[idx]
+
+            # above the max gap considered in the list
+            close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if daily_open_pct[i] > gap_positive_list[-1]]
+            gap = gap_positive_list[-1]
+            key = ">" + str(gap) + " %"
+            self.__stats_positive_gap[">+" + str(gap) + " %"] = {"gap": key}
+            if close_list:
+                cpf = self.__calc_cpf(close_list, x_cpf_positive_open)
+            else:
+                cpf = [self.__NO__DATA_INDICATOR] * len(x_cpf_positive_open)
+            for idx, close_pct in enumerate(x_cpf_positive_open):
+                self.__stats_positive_gap[">+" + str(gap) + " %"]["% " + str(int(close_pct * 10) / 10) + "%"] = cpf[idx]
+
+            # all positive gap-ups
+            close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if daily_open_pct[i] > 0]
+            key = "positive open %"
+            self.__stats_positive_gap[">0 %"] = {"gap": key}
+            if close_list:
+                cpf = self.__calc_cpf(close_list, x_cpf_positive_open)
+            else:
+                cpf = [self.__NO__DATA_INDICATOR] * len(x_cpf_positive_open)
+            for idx, close_pct in enumerate(x_cpf_positive_open):
+                self.__stats_positive_gap[">0 %"]["% " + str(int(close_pct * 10) / 10) + "%"] = cpf[idx]
+
+        # gap down
+        for gap in gap_negative_list:
+            close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if ((daily_open_pct[i] >= gap) and (daily_open_pct[i] < (
+                    gap + self.__STEP_GAP_OPEN)))]
+            key = "[" + str(gap) + "; " + str(gap - self.__STEP_GAP_OPEN) + "[%"
+            self.__stats_negative_gap["+" + str(gap) + " %"] = {"gap": key}
+            if close_list:
+                cpf = self.__calc_cpf([-i for i in close_list], [-i for i in x_cpf_negative_open])
+            else:
+                cpf = [self.__NO__DATA_INDICATOR]*len(x_cpf_negative_open)
+            for idx, close_pct in enumerate(x_cpf_negative_open):
+                self.__stats_negative_gap["+" + str(gap) + " %"]["% " + str(int(close_pct * 10) / 10) + "%"] = cpf[idx]
+
+        # above the max gap considered in the list
+        close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if daily_open_pct[i] < gap_positive_list[-1]]
+        gap = gap_negative_list[-1]
+        key = ">" + str(gap) + " %"
+        self.__stats_negative_gap[">+" + str(gap) + " %"] = {"gap": key}
+        if close_list:
+            cpf = self.__calc_cpf([-i for i in close_list], [-i for i in x_cpf_negative_open])
+        else:
+            cpf = [self.__NO__DATA_INDICATOR] * len(x_cpf_negative_open)
+        for idx, close_pct in enumerate(x_cpf_negative_open):
+            self.__stats_negative_gap[">+" + str(gap) + " %"]["% " + str(int(close_pct * 10) / 10) + "%"] = cpf[idx]
+
+        # all negative gap-ups
+        close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if daily_open_pct[i] < 0]
+        key = "negative open %"
+        self.__stats_negative_gap[">0 %"] = {"gap": key}
+        if close_list:
+            cpf = self.__calc_cpf([-i for i in close_list], [-i for i in x_cpf_negative_open])
+        else:
+            cpf = [self.__NO__DATA_INDICATOR] * len(x_cpf_negative_open)
+        for idx, close_pct in enumerate(x_cpf_negative_open):
+            self.__stats_negative_gap[">0 %"]["% " + str(int(close_pct * 10) / 10) + "%"] = cpf[idx]
+
+    @staticmethod
+    def __calc_cpf(data, x_cdf):
+        """Calculate the cumulative distribution function."""
+
+        cdf = []
+        n = float(len(data))
+        for x in x_cdf:
+            cdf.append(100. * sum(i <= x for i in data) / n)
+        return cdf
 
     def __calc_cumulative_probability(self, input_data):
         """
@@ -237,46 +406,82 @@ class PriceAnalysis:
             with open(os.path.expanduser(self.__filename), 'w') as fo:
                 fo.write("<html>\n<head>\n<title> \nOutput Data in an HTML file \
                           </title>\n</head> <body><h1><center>" + self.__ticker + "</center></h1>\n</body></html>")
-                fo.write("Statistiche " + self.__ticker + " " + self.__years_analysis)
-                fo.write("<br/>Periodo: " + self.__date_start.strftime('%d/%m/%Y'))
+                fo.write("Statistical analysis " + self.__ticker + " " + self.__years_analysis)
+                fo.write("<br/>Time period: " + self.__date_start.strftime('%d/%m/%Y'))
                 fo.write(" al " + self.__date_end.strftime('%d/%m/%Y'))
                 fo.write(" (" + str(int(self.__number_of_weeks)) + " settimane)")
-                fo.write("<br/>Documento creato il " + datetime.today().strftime('%d/%m/%Y'))
-                fo.write('<br/>' + "Tabelle della probabilita' cumulativa di variazione.")
-                fo.write('<br/>' + '<br/>' + "Tabelle variazione giornaliera (CLOSE rispetto a CLOSE giorno precedente)")
+                fo.write("<br/>Documented created on: " + datetime.today().strftime('%d/%m/%Y'))
+                fo.write('<br/>' + "Tables contain the <u>cumulative probability</u> of change.")
+                # ================================= Daily and Weekly STATS ===================================
+                fo.write('<br/><br/>')
+                fo.write("<center><b>Daily and weekly change stats</b></center>")
+                fo.write('<br/>' + '<br/>' + "Daily change (CLOSE with respect to the previous day's CLOSE)")
                 fo.write('<br/>')
                 fo.write(self.__daily_change_df.to_html().replace('<td>', '<td align="center">'))
-                fo.write('<br/>' + '<br/>' + "Tabelle su variazione settimanale (Monday OPEN e Friday CLOSE)")
+                fo.write('<br/>' + '<br/>' + "Weekly change (Monday CLOSE with respect to the previous week Friday's CLOSE)")
                 fo.write('<br/>')
                 fo.write(self.__weekly_change_df.to_html().replace('<td>', '<td align="center">'))
                 fo.write('<br/>')
+                # ================================= DTE STATS ===================================
+                fo.write('<br/><br/>')
+                fo.write("<center><b>DTE analysis for sell put debit</b></center>")
+                fo.write('<br/><br/>')
                 if self.__weekly_dte_change_df is not None:
                     fo.write(self.__weekly_dte_change_df.to_html().replace('<td>', '<td align="center">'))
                 fo.write('<br/>')
                 fo.write(self.__weekly_change_monday_conditional_df.to_html().replace('<td>', '<td align="center">'))
                 if self.__monthly_dte_change_df is not None:
-                    fo.write('<br/>' + '<br/>' + "Tabelle su variazione " + str(self.__MONTH_TRADING_DAYS))
-                    fo.write(" DTE (giorni di trading effettivi, Daily OPEN)")
-                    fo.write("<br>" + str(num_trading_days) + " giorni analizzati (ultima OPEN il ")
+                    fo.write('<br/>' + '<br/>' + "Change in " + str(self.__MONTH_TRADING_DAYS))
+                    fo.write(" DTE (effective trading days, Daily OPEN)")
+                    fo.write("<br>" + str(num_trading_days) + " analyzed days (last OPEN ")
                     fo.write(self.__price_history_df["Date"][num_trading_days - self.__DTE_LONG].strftime(
                         '%d/%m/%Y') + ")")
                     fo.write('<br/>')
                     fo.write(self.__monthly_dte_change_df.to_html().replace('<td>', '<td align="center">'))
                     figure_dte_change, negative_change_stats = self.__make_plot_monthly_change()
-                    fo.write('Statistiche ' + str(self.__MONTH_TRADING_DAYS) + ' DTE negative change:')
+                    fo.write('Stats ' + str(self.__MONTH_TRADING_DAYS) + ' DTE negative change:')
                     fo.write('<br/>')
-                    fo.write('Media: ' + '{:.1f}'.format(negative_change_stats[0]) +
-                             '%, intervallo confidenza: [' + '{:.1f}'.format(negative_change_stats[2]) + '; ' +
+                    fo.write('Average: ' + '{:.1f}'.format(negative_change_stats[0]) +
+                             '%, confidence interval: [' + '{:.1f}'.format(negative_change_stats[2]) + '; ' +
                              '{:.1f}'.format(negative_change_stats[3]) + ']')
                     fo.write('<br/>')
-                    fo.write('Deviazione standard: ' + '{:.1f}'.format(negative_change_stats[1]) + '%')
-                if self.__number_of_weeks > 0:
-                    fo.write('<br/>')
-                    figure_weekly_change = self.__make_plot_weekly_change()
-                    fo.write((figure_weekly_change.to_html(full_html=False, include_plotlyjs='cdn')))
-                if self.__number_of_days > self.__MONTH_TRADING_DAYS:
-                    fo.write('<br/>')
-                    fo.write((figure_dte_change.to_html(full_html=False, include_plotlyjs='cdn')))
+                    fo.write('Standard deviation: ' + '{:.1f}'.format(negative_change_stats[1]) + '%')
+                if self.__DO_PLOT:
+                    if self.__number_of_weeks > 0:
+                        fo.write('<br/>')
+                        figure_weekly_change = self.__make_plot_weekly_change()
+                        fo.write((figure_weekly_change.to_html(full_html=False, include_plotlyjs='cdn')))
+                    if self.__number_of_days > self.__MONTH_TRADING_DAYS:
+                        fo.write('<br/>')
+                        fo.write((figure_dte_change.to_html(full_html=False, include_plotlyjs='cdn')))
+
+                # ================================= GAP UP / DOWN STATS ===================================
+                fo.write('<br/><br/><br/>')
+                fo.write("<center><b>Opening gap-up / down analysis</b></center>")
+                fo.write('<br/>')
+                fo.write("<br/>Cumulative probability of <u>positive daily opens</u>:")
+                gap_up_df = pd.DataFrame([self.__stats_positive_gap[i] for i in self.__stats_positive_gap.keys()])
+                gap_up_df.set_index("gap", inplace=True)
+                gap_up_df.index.name = None
+                fo.write(gap_up_df.to_html().replace('<td>', '<td align="center">'))
+                fo.write("<b>HOW TO USE THE TABLE:</b>")
+                fo.write("<br/> - each row contains the data of all the days with a opening withing the specified range ")
+                fo.write("<br/> - the cell value is the <u>probability that the close is <b>lower or equal</b> the % in the column header</u> ")
+                fo.write("<br> - USAGE: observe the open gap. Choose the sell put strike based on the close pct with the lowest probability.")
+                fo.write("<br/> - note: the percentage of the asset are calculated with respect to the previous day's close")
+
+                fo.write('<br/>')
+                fo.write('<br/>')
+                fo.write("<br/>Cumulative probability of <u>negative daily opens</u>:")
+                gap_down_df = pd.DataFrame([self.__stats_negative_gap[i] for i in self.__stats_negative_gap.keys()])
+                gap_down_df.set_index("gap", inplace=True)
+                gap_down_df.index.name = None
+                fo.write(gap_down_df.to_html().replace('<td>', '<td align="center">'))
+                fo.write("<b>HOW TO USE THE TABLE:</b>")
+                fo.write("<br/> - each row contains the data of all the days with a opening withing the specified range ")
+                fo.write("<br/> - the cell value is the <u>probability that the close is <b>higher or equal</b> the % in the column header</u> ")
+                fo.write("<br> - USAGE: observe the open gap. Choose the sell put strike based on the close pct with the highest probability.")
+                fo.write("<br/> - note: the percentage of the asset are calculated with respect to the previous day's close")
 
         except Exception as e:
             print('Cannot create the html file:', e)
@@ -487,10 +692,10 @@ class PriceAnalysis:
 
         for idx in range(1, len(self.__price_history_df)):
             previous_day_close = self.__price_history_df.at[idx - 1, "Close"]
-            self.__price_history_df.at[idx, "Open wrt close"] = \
-                100.0 * (self.__price_history_df.at[idx, "Open"] - previous_day_close) / previous_day_close
-            self.__price_history_df.at[idx, "Close wrt close"] = \
-                100.0 * (self.__price_history_df.at[idx, "Close"] - previous_day_close) / previous_day_close
+            day_open = self.__price_history_df.at[idx, "Open"]
+            day_close = self.__price_history_df.at[idx, "Close"]
+            self.__price_history_df.at[idx, "Open wrt close"] = 100.0 * (day_open - previous_day_close) / previous_day_close
+            self.__price_history_df.at[idx, "Close wrt close"] = 100.0 * (day_close - previous_day_close) / previous_day_close
 
     def __calc_weekly_statistics(self):
         """

@@ -1,10 +1,15 @@
 import datetime
+import pandas
 import timeit
 from helper.data_analysis import PriceAnalysis
 
 # product-level code: https://www.zenesys.com/blog/python-coding-standards-best-practices
 # structure: https://stackoverflow.com/questions/193161/what-is-the-best-project-structure-for-a-python-application
 
+# Graphical options for dataframe print
+pandas.set_option('display.width', 400)
+pandas.set_option('display.max_columns', 10)
+pandas.options.display.float_format = '{:,.1f}'.format
 
 TICKER = "SPY"
 PATH_TO_REPORT = '~/Desktop/MasteringSP500/'
