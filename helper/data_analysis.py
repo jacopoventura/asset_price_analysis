@@ -15,7 +15,7 @@ class PriceAnalysis:
     Class to analyze historical pricing data of a specific asset.
     """
 
-    def __init__(self, ticker, start, end, path_to_report, do_plot=False):
+    def __init__(self, ticker: str, start: datetime, end: datetime, path_to_report: str, do_plot: bool = False):
         """
         Initialize the class PriceAnalysis with ticker, start and end time for the price analysis.
         :param ticker: ticker of the asset class
@@ -125,7 +125,7 @@ class PriceAnalysis:
         self.__write_html()
         print("Report written in: " + self.__filename)
 
-    def data_sanity_check(self):
+    def data_sanity_check(self) ->list:
         """
         Check if any NaN in the queried data.
         :return: list of dates where NaN were found
@@ -314,20 +314,28 @@ class PriceAnalysis:
             self.__stats_negative_gap[">0 %"]["% " + str(int(close_pct * 10) / 10) + "%"] = cpf[idx]
 
     @staticmethod
-    def __calc_cpf(data, x_cdf):
-        """Calculate the cumulative distribution function."""
+    def __calc_cpf(data: list, x_cpf: list) -> list:
+        """
+        Calculate the cumulative probability function.
+        :param data: input data list on which the cpf is calculated
+        :type data: list
+        :param x_cpf: bins to calculate the cpf
+        :type x_cpf: list
+        """
 
         cdf = []
         n = float(len(data))
-        for x in x_cdf:
+        for x in x_cpf:
             cdf.append(100. * sum(i <= x for i in data) / n)
         return cdf
 
-    def __calc_cumulative_probability(self, input_data):
+    def __calc_cumulative_probability(self, input_data: list) -> list:
         """
         Calculate the cumulative probability of the input data.
         :param input_data: data for which the cumulative probability is calculated
+        :type input_data: list
         :return: cumulative_prob_list: list of the cumulative probability
+        :rtype: list
         """
         data = np.sort(input_data, kind="stable")
 
@@ -344,7 +352,7 @@ class PriceAnalysis:
 
         return dict_cumulative_dist
 
-    def update_analysis_period(self, start, end):
+    def update_analysis_period(self, start: datetime, end: datetime):
         """
         Update the time period for the analysis.
         :param start: start date for the price analysis
@@ -487,7 +495,7 @@ class PriceAnalysis:
             print('Cannot create the html file:', e)
             sys.exit(1)  # stop the main function with exit code 1
 
-    def __make_plot_weekly_change(self):
+    def __make_plot_weekly_change(self) -> go.Figure:
         """
         Make the bar plot of the weekly change of the asset.
         :return: plotly figure
@@ -581,7 +589,7 @@ class PriceAnalysis:
 
         return fig
 
-    def __make_plot_monthly_change(self):
+    def __make_plot_monthly_change(self) -> tuple[go.Figure, list]:
         """
         Make the bar plot of the monthly change of the asset.
         :return: plotly figure
@@ -642,7 +650,7 @@ class PriceAnalysis:
         return fig, confidence_interval
 
     @staticmethod
-    def __mean_confidence_interval(data, confidence=0.95):
+    def __mean_confidence_interval(data: list, confidence: float = 0.95) -> list:
         """
         Calculate the mean and confidence interval of a list of data.
         :param data: list of data
@@ -661,7 +669,7 @@ class PriceAnalysis:
                 mean - standard_deviation*t_crit/np.sqrt(n),
                 mean + standard_deviation*t_crit/np.sqrt(n)]
 
-    def __calc_DTE_statistics(self, dte, max_change_pct):
+    def __calc_DTE_statistics(self, dte: int, max_change_pct: float) -> pd.DataFrame:
         """
         Calculate statistics given for any day given a DTE.
         :param dte: date to end (effective trading days)
@@ -669,7 +677,7 @@ class PriceAnalysis:
         :param max_change_pct: max weekly change in percentage expressed in the range 0-100
         :type max_change_pct: float
         :return: dataframe with the price change for the selected DTE
-        :rtype: pd.dataframe
+        :rtype: pd.DataFrame
         """
 
         change_list_df = self.__calc_change_DTE(dte)
@@ -751,7 +759,7 @@ class PriceAnalysis:
         self.__weekly_change_monday_conditional_df.set_index("Case", inplace=True)
         self.__weekly_change_monday_conditional_df.index.name = None
 
-    def __calc_number_of_weeks_in_year(self, year):
+    def __calc_number_of_weeks_in_year(self, year: int) -> list:
         """
         Get the first weeknumber and the last weeknumber for the selected year.
         :param year: year for the calculation of the number of weeks
@@ -789,7 +797,7 @@ class PriceAnalysis:
                     self.__weekly_change_first_day_negative.append(week_change)
                     self.__weekly_change_first_day_negative_week_count.append(week_counter)
 
-    def __calc_weekly_movement(self):
+    def __calc_weekly_movement(self) -> list:
         """
         Calculate the weekly movement of the ticker. Weekdays shall be at least 2.
         :return: list with the weekly changes
@@ -810,7 +818,7 @@ class PriceAnalysis:
                 change_monday_to_friday_list.append(change)
         return change_monday_to_friday_list
 
-    def __calc_weekly_friday_to_friday_movement(self):
+    def __calc_weekly_friday_to_friday_movement(self) -> list:
         """
         Calculate the weekly movement of the ticker (last day to last day).
         The current week shall have at least 4 weekdays.
@@ -835,13 +843,13 @@ class PriceAnalysis:
                 change_friday_to_friday_list.append(change)
         return change_friday_to_friday_list
 
-    def __calc_change_DTE(self, dte):
+    def __calc_change_DTE(self, dte: int) -> pd.DataFrame:
         """
         Calculate the price change (close to close) given an input DTE (Date To End) of every day of the price data.
         :param dte: Date To End (effective trading days until option expiration)
         :type dte: int
         :return: dataframe with the DTE changes for each day of the selected period
-        :rtype: pd.dataframe"""
+        :rtype: pd.DataFrame"""
 
         num_data = len(self.__price_history_df.index)
         change_list = []
@@ -858,7 +866,7 @@ class PriceAnalysis:
         return {"change_list": change_list, "date range": date_range}
 
     @staticmethod
-    def __calc_positive_negative_change_lists(change_list):
+    def __calc_positive_negative_change_lists(change_list: list) -> list:
         """
         Split the input change list into positive change list and negative change list.
         :param change_list: list of price changes
@@ -888,7 +896,7 @@ class PriceAnalysis:
         self.__day_gapdown_df = \
             self.__price_history_df.loc[self.__price_history_df["Open wrt close"] < 0]
 
-    def __calc_distribution(self, change_list, pct_max, step):
+    def __calc_distribution(self, change_list: list, pct_max: float, step: float) -> dict:
         """
         Calculate the distributions of positive and negative changes.
         Calculate the cumulative probability distribution.
@@ -946,16 +954,16 @@ class PriceAnalysis:
 
         return dict_positive, dict_negative
 
-    def get_price_history(self):
+    def get_price_history(self) -> pd.DataFrame:
         """
         Return price history dataframe.
         :return: dataframe of the price history of the asset
-        :rtype: pd.dataframe
+        :rtype: pd.DataFrame
         """
 
         return self.__price_history_df
 
-    def get_source(self):
+    def get_source(self) -> str:
         """
         Return source for price query.
         :return: price history query source

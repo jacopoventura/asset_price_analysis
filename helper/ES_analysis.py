@@ -16,7 +16,7 @@ class EsPriceAnalysis:
     Class to analyze historical pricing data of ES.
     """
 
-    def __init__(self, folder, es_data_filename):
+    def __init__(self, folder: str, es_data_filename: str):
         """
         Initialize the class PriceAnalysis with ticker, start and end time for the price analysis.
         """
@@ -36,7 +36,7 @@ class EsPriceAnalysis:
         self.__BIN_RANGE_CPF = 5
         self.__BIN_TREND_CPF = 10
 
-        self.__x_cdf_time = [
+        self.__x_cpf_time = [
             datetime.time(hour=9, minute=30),
             datetime.time(hour=10, minute=00),
             datetime.time(hour=10, minute=30),
@@ -170,13 +170,13 @@ class EsPriceAnalysis:
             print('Cannot query historical data:', e)
             sys.exit(1)  # stop the main function with exit code 1
 
-    def __count_point(self, point, list_perfect_rebound, list_deep_rebound, list_no_rebound):
+    def __count_point(self, point: int, list_perfect_rebound: list, list_deep_rebound: list, list_no_rebound: list) -> tuple[list, list, list]:
         """
         Count occurrences of the point.
         """
         return list_perfect_rebound.count(point), list_deep_rebound.count(point), list_no_rebound.count(point)
 
-    def __round(self, n):
+    def __round(self, n: int):
         return int(n * self.__FACTOR_ROUND) / self.__FACTOR_ROUND
 
     def __analyze_pivot_points(self):
@@ -188,7 +188,6 @@ class EsPriceAnalysis:
         In some of these cases, ES bounced later within 15pt from the point (therefore not causing a stop hedge with
         MasteringSP500). If the column point bounce contains a number, the bounce is deep and within 15pt.
         Otherwise, no rebound happened.
-        :return:
         """
 
         # Get row indexes of days with PP interaction
@@ -360,9 +359,6 @@ class EsPriceAnalysis:
         self.__stats_no_rebound["Point"]["% pivot"] = 100. * point_no_rebound.count("PP") / count_days_no_rebound
         self.__stats_no_rebound["Point"]["% support"] = 100. * point_no_rebound.count("S") / count_days_no_rebound
 
-        # TO DO
-        # any 4pt vibration? before going straight?
-
     def __analyze_reversal(self):
         self.__analyze_general_reversal()
         self.__analyze_reversal_each_trend()
@@ -519,9 +515,9 @@ class EsPriceAnalysis:
         range_range_all_days = self.__es_range_df["Max Range 8:30 - 13"].values
         range_range_es_lower_pp = self.__es_range_df[(self.__es_range_df["ES & PP"] == 1) | (self.__es_range_df["ES & PP"] == -1)]["Max Range 8:30 - 13"].values
         range_range_es_higher_pp = self.__es_range_df[(self.__es_range_df["ES & PP"] == 0) | (self.__es_range_df["ES & PP"] == 2)]["Max Range 8:30 - 13"].values
-        range_cpf = self.__calc_cpf(range_range_all_days, max(range_range_all_days), self.__BIN_RANGE_CPF)
-        range_es_lower_pp_cpf = self.__calc_cpf(range_range_es_lower_pp, max(range_range_all_days), self.__BIN_RANGE_CPF)
-        range_es_higher_pp_cpf = self.__calc_cpf(range_range_es_higher_pp, max(range_range_all_days), self.__BIN_RANGE_CPF)
+        range_cpf = self.__calc_cpf(range_range_all_days, int(max(range_range_all_days)), self.__BIN_RANGE_CPF)
+        range_es_lower_pp_cpf = self.__calc_cpf(range_range_es_lower_pp, int(max(range_range_all_days)), self.__BIN_RANGE_CPF)
+        range_es_higher_pp_cpf = self.__calc_cpf(range_range_es_higher_pp, int(max(range_range_all_days)), self.__BIN_RANGE_CPF)
         for i, p in enumerate(range_cpf["x"]):
             self.__stats_range_range["Range"]["% " + str(p) + "pt"] = range_cpf["cpf"][i]
             self.__stats_range_range["Range ES<PP"]["% " + str(p) + "pt"] = range_es_lower_pp_cpf["cpf"][i]
@@ -536,9 +532,9 @@ class EsPriceAnalysis:
             "Max Range 8:30 - 13"].values
         range_uptrend_es_higher_pp = self.__es_uptrend_df[(self.__es_uptrend_df["ES & PP"] == 0) | (self.__es_uptrend_df["ES & PP"] == 2)][
             "Max Range 8:30 - 13"].values
-        uptrend_cpf = self.__calc_cpf(range_uptrend_all_days, max(range_uptrend_all_days), self.__BIN_TREND_CPF)
-        uptrend_es_lower_pp_cpf = self.__calc_cpf(range_uptrend_es_lower_pp, max(range_uptrend_all_days), self.__BIN_TREND_CPF)
-        uptrend_es_higher_pp_cpf = self.__calc_cpf(range_uptrend_es_higher_pp, max(range_uptrend_all_days), self.__BIN_TREND_CPF)
+        uptrend_cpf = self.__calc_cpf(range_uptrend_all_days, int(max(range_uptrend_all_days)), self.__BIN_TREND_CPF)
+        uptrend_es_lower_pp_cpf = self.__calc_cpf(range_uptrend_es_lower_pp, int(max(range_uptrend_all_days)), self.__BIN_TREND_CPF)
+        uptrend_es_higher_pp_cpf = self.__calc_cpf(range_uptrend_es_higher_pp, int(max(range_uptrend_all_days)), self.__BIN_TREND_CPF)
         for i, p in enumerate(uptrend_cpf["x"]):
             self.__stats_range_uptrend["Uptrend"]["% " + str(p) + "pt"] = uptrend_cpf["cpf"][i]
             self.__stats_range_uptrend["Uptrend ES<PP"]["% " + str(p) + "pt"] = uptrend_es_lower_pp_cpf["cpf"][i]
@@ -553,9 +549,9 @@ class EsPriceAnalysis:
             "Max Range 8:30 - 13"].values
         range_downtrend_es_higher_pp = self.__es_downtrend_df[(self.__es_downtrend_df["ES & PP"] == 0) | (self.__es_downtrend_df["ES & PP"] == 2)][
             "Max Range 8:30 - 13"].values
-        downtrend_cpf = self.__calc_cpf(range_downtrend_all_days, max(range_downtrend_all_days), self.__BIN_TREND_CPF)
-        downtrend_es_lower_pp_cpf = self.__calc_cpf(range_downtrend_es_lower_pp, max(range_downtrend_all_days), self.__BIN_TREND_CPF)
-        downtrend_es_higher_pp_cpf = self.__calc_cpf(range_downtrend_es_higher_pp, max(range_downtrend_all_days), self.__BIN_TREND_CPF)
+        downtrend_cpf = self.__calc_cpf(range_downtrend_all_days, int(max(range_downtrend_all_days)), self.__BIN_TREND_CPF)
+        downtrend_es_lower_pp_cpf = self.__calc_cpf(range_downtrend_es_lower_pp, int(max(range_downtrend_all_days)), self.__BIN_TREND_CPF)
+        downtrend_es_higher_pp_cpf = self.__calc_cpf(range_downtrend_es_higher_pp, int(max(range_downtrend_all_days)), self.__BIN_TREND_CPF)
         for i, p in enumerate(downtrend_cpf["x"]):
             self.__stats_range_downtrend["Downtrend"]["% " + str(p) + "pt"] = downtrend_cpf["cpf"][i]
             self.__stats_range_downtrend["Downtrend ES<PP"]["% " + str(p) + "pt"] = downtrend_es_lower_pp_cpf["cpf"][i]
@@ -606,14 +602,6 @@ class EsPriceAnalysis:
         # stats all: cpf body candle
         # stats all: avg. pt rebound if candle body > 4 vs 0pt body
         # stats all: pct body > 0 vs body == 0
-
-
-
-
-
-
-
-
 
     def __write_html(self):
         """
@@ -877,26 +865,26 @@ class EsPriceAnalysis:
             sys.exit(1)  # stop the main function with exit code 1
 
     @staticmethod
-    def __calc_cpf(data, bin_max, bin_span=2):
-        """Calculate the cumulative distribution function."""
-
-        cdf = []
-        x_cdf = [p for p in range(bin_span, bin_max, bin_span)] + [bin_max]
-        n = float(len(data))
-        for x in x_cdf:
-            cdf.append(100. * sum(i <= x for i in data) / n)
-        return {"cpf": cdf, "x": x_cdf}
-
-    def __calc_cpf_time(self, data):
+    def __calc_cpf(data: list, bin_max: int, bin_span: int = 2) -> dict:
         """Calculate the cumulative probability function."""
 
-        cdf = []
+        cpf = []
+        x_cpf = [p for p in range(bin_span, bin_max, bin_span)] + [bin_max]
         n = float(len(data))
-        for x in self.__x_cdf_time:
-            cdf.append(100. * sum(i <= x for i in data) / n)
-        return {"cpf": cdf, "x": self.__x_cdf_time}
+        for x in x_cpf:
+            cpf.append(100. * sum(i <= x for i in data) / n)
+        return {"cpf": cpf, "x": x_cpf}
 
-    def __make_plot_monthly_change(self):
+    def __calc_cpf_time(self, data: list) -> dict:
+        """Calculate the cumulative probability function."""
+
+        cpf = []
+        n = float(len(data))
+        for x in self.__x_cpf_time:
+            cpf.append(100. * sum(i <= x for i in data) / n)
+        return {"cpf": cpf, "x": self.__x_cpf_time}
+
+    def __make_plot_monthly_change(self) -> tuple[go.Figure, list]:
         """
         Make the bar plot of the monthly change of the asset.
         :return: plotly figure
