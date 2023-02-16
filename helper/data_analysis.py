@@ -341,7 +341,7 @@ class PriceAnalysis:
 
         dict_cumulative_dist = {"frequency [%]": 0}
         num_days = len(data)
-        if data[0] > 0:
+        if data[0] >= 0:  # positive data if min >=0, otherwise negative data
             for pct in self.__BINS_DAILY_CHANGE:
                 dict_cumulative_dist[str(int(pct*10)/10) + "% change"] = \
                     100.0 * len([j for j in data if j <= pct]) / num_days
