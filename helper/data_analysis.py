@@ -1,3 +1,4 @@
+import yfinance as yf
 import math
 import numpy as np
 import os
@@ -6,7 +7,7 @@ import pandas_datareader.data as web
 import plotly.graph_objects as go
 import sys
 
-from datetime import datetime
+import datetime
 from scipy.stats import t
 
 
@@ -15,7 +16,12 @@ class PriceAnalysis:
     Class to analyze historical pricing data of a specific asset.
     """
 
-    def __init__(self, ticker: str, start: datetime, end: datetime, path_to_report: str, do_plot: bool = False):
+    def __init__(self, ticker: str,
+                 start: datetime,
+                 end: datetime,
+                 path_to_report: str,
+                 stats_vix: bool = True,
+                 do_plot: bool = False):
         """
         Initialize the class PriceAnalysis with ticker, start and end time for the price analysis.
         :param ticker: ticker of the asset class
@@ -26,11 +32,16 @@ class PriceAnalysis:
         :type end: datetime
         :param path_to_report: path where the report is saved
         :type path_to_report: str
+        :param stats_vix: query vix data or not
+        :type stats_vix: bool
+        :param do_plot: plot graphs in the html file
+        :type do_plot: false
         """
 
         self.__SOURCE = 'stooq'
 
         self.__DO_PLOT = do_plot
+        self.__STATS_VIX = stats_vix
 
         self.__WEEK_TRADING_DAYS = 5
         self.__MONTH_TRADING_DAYS = 23
@@ -65,6 +76,14 @@ class PriceAnalysis:
                                               + '_to_' \
                                               + self.__date_end.strftime('%d%m%Y') \
                                               + '.html'
+
+
+        date_start_vix = datetime.datetime(1990, 1, 2)
+        if self.__date_start < date_start_vix:
+            print("WARNING: start date before first available date for VIX: VIX wil not be queried only from 02/01/1990")
+            self.__date_start_vix = date_start_vix
+        else:
+            self.__date_start_vix = self.__date_start
 
         self.__price_history_df = None
         self.__daily_change_df = None
@@ -102,6 +121,7 @@ class PriceAnalysis:
             print("Check the following dates: ")
             print(nan_date_list)
             return
+        self.query_vix()
 
         # Step 2: calculate daily statistics
         self.__calc_daily_statistics()
@@ -125,7 +145,7 @@ class PriceAnalysis:
         self.__write_html()
         print("Report written in: " + self.__filename)
 
-    def data_sanity_check(self) ->list:
+    def data_sanity_check(self) -> list:
         """
         Check if any NaN in the queried data.
         :return: list of dates where NaN were found
@@ -136,7 +156,7 @@ class PriceAnalysis:
             if self.__price_history_df[key].isnull().values.any():
                 idx_nan = np.argwhere(np.isnan(self.__price_history_df[key].values))
                 return self.__price_history_df[key].iloc(idx_nan).values
-        return None
+        return []
 
     def __calc_daily_statistics(self):
         """
@@ -329,7 +349,7 @@ class PriceAnalysis:
             cdf.append(100. * sum(i <= x for i in data) / n)
         return cdf
 
-    def __calc_cumulative_probability(self, input_data: list) -> list:
+    def __calc_cumulative_probability(self, input_data: list) -> dict:
         """
         Calculate the cumulative probability of the input data.
         :param input_data: data for which the cumulative probability is calculated
@@ -377,6 +397,9 @@ class PriceAnalysis:
     def query_price(self):
         """
         Query data of the ticker for the input timerange from the source database.
+        Download vix data from yahoo (data available from 02.01.1990).
+        database:
+        finance.yahoo.com/quote/%5EVIX/history?period1=631238400&period2=1689206400&interval=1d&filter=history&frequency=1d&includeAdjustedClose=true
         """
 
         try:
@@ -404,6 +427,25 @@ class PriceAnalysis:
         self.__price_history_df = self.__price_history_df.reset_index(level=0)
         self.__years_list = list(set(years_list))  # get unique years
 
+    def query_vix(self):
+        """
+        Query data of the VIX for the input timerange from the source database and add it to the main dataframe.
+        """
+
+        try:
+            vix_history_df = yf.download('^VIX', start = self.__date_start_vix, end=self.__date_end)
+
+        except Exception as e:
+            print('Cannot query historical data of VIX:', e)
+            sys.exit(1)  # stop the main function with exit code 1
+
+        # Append VIX column after the last column of the dataframe
+        self.__price_history_df["VIX"] = 0
+        for index, row in vix_history_df.iterrows():
+            vix_date = pd.to_datetime(index)
+            vix = row["Close"]
+            self.__price_history_df.loc[self.__price_history_df['Date'] == vix_date, "VIX"] = vix
+
     def __write_html(self):
         """
         Write output file with all the statistics.
@@ -418,7 +460,7 @@ class PriceAnalysis:
                 fo.write("<br/>Time period: " + self.__date_start.strftime('%d/%m/%Y'))
                 fo.write(" al " + self.__date_end.strftime('%d/%m/%Y'))
                 fo.write(" (" + str(int(self.__number_of_weeks)) + " settimane)")
-                fo.write("<br/>Documented created on: " + datetime.today().strftime('%d/%m/%Y'))
+                fo.write("<br/>Documented created on: " + datetime.datetime.today().strftime('%d/%m/%Y'))
                 fo.write('<br/>' + "Tables contain the <u>cumulative probability</u> of change.")
                 # ================================= Daily and Weekly STATS ===================================
                 fo.write('<br/><br/>')
@@ -843,7 +885,7 @@ class PriceAnalysis:
                 change_friday_to_friday_list.append(change)
         return change_friday_to_friday_list
 
-    def __calc_change_DTE(self, dte: int) -> pd.DataFrame:
+    def __calc_change_DTE(self, dte: int) -> dict:
         """
         Calculate the price change (close to close) given an input DTE (Date To End) of every day of the price data.
         :param dte: Date To End (effective trading days until option expiration)
