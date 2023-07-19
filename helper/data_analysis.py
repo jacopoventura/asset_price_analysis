@@ -51,6 +51,7 @@ class PriceAnalysis:
         self.__DTE_LONG = 23
         self.__STEP = 1  # step to calculate the cumulative distribution
         self.__BINS_DAILY_CHANGE = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]
+        self.__BINS_VIX = [vix for vix in range(10,40,2)]
 
         self.__PLOT_COLUMN_WIDTH = 0.75
 
@@ -108,13 +109,17 @@ class PriceAnalysis:
         self.__day_positive_close = []
         self.__day_negative_close = []
 
+        self.__dict_daily_change_vix_bins = {}
+        for vix in self.__BINS_VIX:
+            self.__dict_daily_change_vix_bins[str(vix)] = {"positive": [], "negative": []}
+
     def run(self):
         """
         Run the whole analysis and save the final document with all the statistics.
         """
 
         # Step 1: get historical price data for the selected time period and check data quality
-        self.query_price()
+        self.query_asset_price()
         nan_date_list = self.data_sanity_check()
         if nan_date_list:
             print("Historical data have some NaNs")
@@ -125,6 +130,7 @@ class PriceAnalysis:
 
         # Step 2: calculate daily statistics
         self.__calc_daily_statistics()
+        self.__calc_daily_statistics_vix()
 
         # Step 3: calculate weekly statistics
         self.__calc_weekly_statistics()
@@ -394,12 +400,9 @@ class PriceAnalysis:
                                               + '_update' + self.__date_end.strftime('%d%m%Y') \
                                               + '.html'
 
-    def query_price(self):
+    def query_asset_price(self):
         """
         Query data of the ticker for the input timerange from the source database.
-        Download vix data from yahoo (data available from 02.01.1990).
-        database:
-        finance.yahoo.com/quote/%5EVIX/history?period1=631238400&period2=1689206400&interval=1d&filter=history&frequency=1d&includeAdjustedClose=true
         """
 
         try:
@@ -430,6 +433,9 @@ class PriceAnalysis:
     def query_vix(self):
         """
         Query data of the VIX for the input timerange from the source database and add it to the main dataframe.
+        Download vix data from yahoo (data available from 02.01.1990).
+        database:
+        finance.yahoo.com/quote/%5EVIX/history?period1=631238400&period2=1689206400&interval=1d&filter=history&frequency=1d&includeAdjustedClose=true
         """
 
         try:
@@ -445,6 +451,42 @@ class PriceAnalysis:
             vix_date = pd.to_datetime(index)
             vix = row["Close"]
             self.__price_history_df.loc[self.__price_history_df['Date'] == vix_date, "VIX"] = vix
+
+
+    def __calc_daily_statistics_vix(self):
+        """
+        Calculate the cumulative probability of daily change (close to close) according to the VIX levels.
+        Data in each bin interval are selected such that vix>vix_min & vix<=vix_max.
+        :return: None
+        """
+
+        # Check values of the vix <= min(BINS_VIX)
+        filtered_df = self.__price_history_df.loc[self.__price_history_df['VIX'] <= min(self.__BINS_VIX)]
+        if not filtered_df.empty:
+            if not filtered_df.empty:
+                self.__dict_daily_change_vix_bins[str(min(self.__BINS_VIX))]["positive"] = \
+                    filtered_df.loc[filtered_df["Close wrt close"] >= 0]["Close wrt close"].tolist()
+                self.__dict_daily_change_vix_bins[str(min(self.__BINS_VIX))]["negative"] = \
+                    filtered_df.loc[filtered_df["Close wrt close"] < 0]["Close wrt close"].tolist()
+
+        # Check values of the vix > max(BINS_VIX)
+        filtered_df = self.__price_history_df.loc[self.__price_history_df['VIX'] > max(self.__BINS_VIX)]
+        if not filtered_df.empty:
+            self.__dict_daily_change_vix_bins[max(self.__BINS_VIX)+"+"]["positive"] = \
+                filtered_df.loc[filtered_df["Close wrt close"] >= 0]["Close wrt close"].tolist()
+            self.__dict_daily_change_vix_bins[max(self.__BINS_VIX)+"+"]["negative"] = \
+                filtered_df.loc[filtered_df["Close wrt close"] < 0]["Close wrt close"].tolist()
+
+        # Check the vix intervals
+        for idx in range(1, len(self.__BINS_VIX) - 1):
+            vix_min = self.__BINS_VIX[idx]
+            vix_max = self.__BINS_VIX[idx + 1]
+            filtered_df = self.__price_history_df.loc[(self.__price_history_df['VIX'] > vix_min) & (self.__price_history_df['VIX'] <= vix_max)]
+            if not filtered_df.empty:
+                self.__dict_daily_change_vix_bins[str(vix_max)]["positive"] = \
+                    filtered_df.loc[filtered_df["Close wrt close"] >= 0]["Close wrt close"].tolist()
+                self.__dict_daily_change_vix_bins[str(vix_max)]["negative"] = \
+                    filtered_df.loc[filtered_df["Close wrt close"] < 0]["Close wrt close"].tolist()
 
     def __write_html(self):
         """
