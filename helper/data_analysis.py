@@ -129,8 +129,6 @@ class PriceAnalysis:
             print(nan_date_list)
             return
         self.query_vix()
-        # sort by date (first row the most recent date)
-        self.__price_history_df.sort_values("Date")
 
         # Step 2: calculate daily statistics
         self.__calc_daily_statistics()
@@ -427,6 +425,9 @@ class PriceAnalysis:
             print('Cannot query historical data:', e)
             sys.exit(1)  # stop the main function with exit code 1
 
+        # sort by date (first row the most recent date)
+        self.__price_history_df.sort_values("Date")
+
         weekday_list = []
         weeknumber_list = []
         years_list = []
@@ -461,10 +462,17 @@ class PriceAnalysis:
 
         # Append VIX column after the last column of the dataframe
         self.__price_history_df["VIX"] = 0
-        for index, row in vix_history_df.iterrows():
-            vix_date = pd.to_datetime(index)
-            vix = row["Close"]
+        vix_date_list = vix_history_df.index.values
+        for vix_date in vix_date_list:
+            vix = vix_history_df.loc[vix_date]["Close"]
             self.__price_history_df.loc[self.__price_history_df['Date'] == vix_date, "VIX"] = vix
+
+        # Fill unavailable vix data with the value of the previous day. Loop from oldest (idx=len(list)) to the most recent day (idx=0)
+        vix_history_close_list = self.__price_history_df["VIX"].to_list()
+        for idx in range(len(vix_history_close_list)-1, -1, -1):
+            if vix_history_close_list[idx] == 0:
+                vix_history_close_list[idx] = vix_history_close_list[idx+1]
+        self.__price_history_df["VIX"] = vix_history_close_list
 
 
     def __calc_daily_statistics_vix(self):
@@ -478,7 +486,7 @@ class PriceAnalysis:
         filtered_df = self.__price_history_df.loc[self.__price_history_df['VIX'] <= min(self.__BINS_VIX)]
         vix_key = str(min(self.__BINS_VIX))
         if not filtered_df.empty:
-            positive_daily_change = filtered_df.loc[filtered_df["Close wrt close"] >= 0]["Close wrt close"].tolist()
+            positive_daily_change = filtered_df.loc[filtered_df["Close wrt close"] > 0]["Close wrt close"].tolist()
             negative_daily_change = filtered_df.loc[filtered_df["Close wrt close"] < 0]["Close wrt close"].tolist()
             count_positive_days = len(positive_daily_change)
             count_negative_days = len(negative_daily_change)
@@ -498,7 +506,7 @@ class PriceAnalysis:
         filtered_df = self.__price_history_df.loc[self.__price_history_df['VIX'] > max(self.__BINS_VIX)]
         vix_key = str(max(self.__BINS_VIX)) + "+"
         if not filtered_df.empty:
-            positive_daily_change = filtered_df.loc[filtered_df["Close wrt close"] >= 0]["Close wrt close"].tolist()
+            positive_daily_change = filtered_df.loc[filtered_df["Close wrt close"] > 0]["Close wrt close"].tolist()
             negative_daily_change = filtered_df.loc[filtered_df["Close wrt close"] < 0]["Close wrt close"].tolist()
             count_positive_days = len(positive_daily_change)
             count_negative_days = len(negative_daily_change)
@@ -521,7 +529,7 @@ class PriceAnalysis:
             filtered_df = self.__price_history_df.loc[(self.__price_history_df['VIX'] > vix_min) & (self.__price_history_df['VIX'] <= vix_max)]
             vix_key = str(vix_max)
             if not filtered_df.empty:
-                positive_daily_change = filtered_df.loc[filtered_df["Close wrt close"] >= 0]["Close wrt close"].tolist()
+                positive_daily_change = filtered_df.loc[filtered_df["Close wrt close"] > 0]["Close wrt close"].tolist()
                 negative_daily_change = filtered_df.loc[filtered_df["Close wrt close"] < 0]["Close wrt close"].tolist()
                 count_positive_days = len(positive_daily_change)
                 count_negative_days = len(negative_daily_change)
