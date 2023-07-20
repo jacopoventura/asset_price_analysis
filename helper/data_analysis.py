@@ -51,7 +51,7 @@ class PriceAnalysis:
         self.__DTE_LONG = 23
         self.__STEP = 1  # step to calculate the cumulative distribution
         self.__BINS_DAILY_CHANGE = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]
-        self.__BINS_VIX = [vix for vix in range(10,40,2)]
+        self.__BINS_VIX = [vix for vix in range(10,41,3)]
 
         self.__PLOT_COLUMN_WIDTH = 0.75
 
@@ -66,6 +66,7 @@ class PriceAnalysis:
         self.__date_end = end
         self.__number_of_days = (end - start).days
         self.__number_of_weeks = math.ceil(self.__number_of_days / 7)
+        self.__number_of_trading_days = 0
 
         self.__PATH_TO_HTML = path_to_report
         if start.year == end.year:
@@ -111,7 +112,8 @@ class PriceAnalysis:
 
         self.__dict_daily_change_vix_bins = {}
         for vix in self.__BINS_VIX:
-            self.__dict_daily_change_vix_bins[str(vix)] = {"positive": [], "negative": []}
+            self.__dict_daily_change_vix_bins[str(vix)] = {"cumulative positive": {}, "cumulative negative": {}}
+        self.__dict_daily_change_vix_bins[str(max(self.__BINS_VIX))+"+"] = {"cumulative positive": {}, "cumulative negative": {}}
 
     def run(self):
         """
@@ -127,6 +129,8 @@ class PriceAnalysis:
             print(nan_date_list)
             return
         self.query_vix()
+        # sort by date (first row the most recent date)
+        self.__price_history_df.sort_values("Date")
 
         # Step 2: calculate daily statistics
         self.__calc_daily_statistics()
@@ -218,20 +222,22 @@ class PriceAnalysis:
         while x < max_close_positive_open:
             x_cpf_positive_open.append(x)
             x += self.__BIN_CLOSE_PCT
-        if x_cpf_positive_open[-1] < max_close_positive_open:
-            x_cpf_positive_open.append(max_close_positive_open)
-        elif x_cpf_positive_open[-1] > max_close_positive_open:
-            x_cpf_positive_open = max_close_positive_open
+        if len(x_cpf_positive_open) > 0:
+            if x_cpf_positive_open[-1] < max_close_positive_open:
+                x_cpf_positive_open.append(max_close_positive_open)
+            elif x_cpf_positive_open[-1] > max_close_positive_open:
+                x_cpf_positive_open = max_close_positive_open
 
         x_cpf_negative_open = []
         x = int(max_close_negative_open*self.__BIN_CLOSE_PCT)/self.__BIN_CLOSE_PCT - self.__BIN_CLOSE_PCT
         while x > min_close_negative_open:
             x_cpf_negative_open.append(x)
             x -= self.__BIN_CLOSE_PCT
-        if x_cpf_negative_open[-1] > min_close_negative_open:
-            x_cpf_negative_open.append(min_close_negative_open)
-        elif x_cpf_negative_open[-1] > min_close_negative_open:
-            x_cpf_negative_open = min_close_negative_open
+        if len(x_cpf_negative_open) > 0:
+            if x_cpf_negative_open[-1] > min_close_negative_open:
+                x_cpf_negative_open.append(min_close_negative_open)
+            elif x_cpf_negative_open[-1] > min_close_negative_open:
+                x_cpf_negative_open = min_close_negative_open
 
         gap_positive_list = []
         gap_negative_list = []
@@ -246,18 +252,24 @@ class PriceAnalysis:
             close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if ((daily_open_pct[i] <= gap) and (daily_open_pct[i] > (
                     gap-self.__STEP_GAP_OPEN)))]
             key = "]"+str(gap-self.__STEP_GAP_OPEN)+"; "+str(gap)+"]%"
-            self.__stats_positive_gap["+" + str(gap) + " %"] = {"gap": key}
+            self.__stats_positive_gap[str(gap) + " %"] = {"gap": key}
             cpf = self.__calc_cpf(close_list, x_cpf_positive_open)
-            for i, close in enumerate(x_cpf_positive_open):
-                self.__stats_positive_gap["+" + str(gap) + " %"]["% " + str(int(close*10)/10)+"%"] = cpf[i]
+            if len(cpf) > 0:
+                for i, close in enumerate(x_cpf_positive_open):
+                    self.__stats_positive_gap[str(gap) + " %"][str(int(close*10)/10)+"%"] = cpf[i]
+            else:
+                self.__stats_positive_gap[str(gap) + " %"][str(int(close * 10) / 10) + "%"] = 0
 
         # above the max gap considered in the list
         close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if daily_open_pct[i] > gap_positive_list[-1]]
         key = ">" + str(gap_positive_list[-1]) + " %"
         self.__stats_positive_gap[">+" + str(gap_positive_list[-1]) + " %"] = {"gap": key}
         cpf = self.__calc_cpf(close_list, x_cpf_positive_open)
-        for i, close in enumerate(x_cpf_positive_open):
-            self.__stats_positive_gap[">+" + str(gap_positive_list[-1]) + " %"]["% " + str(int(close * 10) / 10) + "%"] = cpf[i]
+        if len(cpf) > 0:
+            for i, close in enumerate(x_cpf_positive_open):
+                self.__stats_positive_gap[">+" + str(gap_positive_list[-1]) + " %"][str(int(close * 10) / 10) + "%"] = cpf[i]
+        else:
+            self.__stats_positive_gap[">+" + str(gap_positive_list[-1]) + " %"][str(int(close * 10) / 10) + "%"] = 0
 
         # all positive gap-ups
         close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if daily_open_pct[i] > 0]
@@ -265,20 +277,20 @@ class PriceAnalysis:
         self.__stats_positive_gap[">0 %"] = {"gap": key}
         cpf = self.__calc_cpf(close_list, x_cpf_positive_open)
         for i, close in enumerate(x_cpf_positive_open):
-            self.__stats_positive_gap[">0 %"]["% " + str(int(close * 10) / 10) + "%"] = cpf[i]
+            self.__stats_positive_gap[">0 %"][str(int(close * 10) / 10) + "%"] = cpf[i]
 
             # gap up
             for gap in gap_positive_list:
                 close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if ((daily_open_pct[i] <= gap) and (daily_open_pct[i] > (
                         gap - self.__STEP_GAP_OPEN)))]
                 key = "]" + str(gap - self.__STEP_GAP_OPEN) + "; " + str(gap) + "]%"
-                self.__stats_positive_gap["+" + str(gap) + " %"] = {"gap": key}
+                self.__stats_positive_gap[str(gap) + " %"] = {"gap": key}
                 if close_list:
                     cpf = self.__calc_cpf(close_list, x_cpf_positive_open)
                 else:
                     cpf = [self.__NO__DATA_INDICATOR] * len(x_cpf_positive_open)
                 for idx, close_pct in enumerate(x_cpf_positive_open):
-                    self.__stats_positive_gap["+" + str(gap) + " %"]["% " + str(int(close_pct * 10) / 10) + "%"] = cpf[idx]
+                    self.__stats_positive_gap[str(gap) + " %"][str(int(close_pct * 10) / 10) + "%"] = cpf[idx]
 
             # above the max gap considered in the list
             close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if daily_open_pct[i] > gap_positive_list[-1]]
@@ -290,7 +302,7 @@ class PriceAnalysis:
             else:
                 cpf = [self.__NO__DATA_INDICATOR] * len(x_cpf_positive_open)
             for idx, close_pct in enumerate(x_cpf_positive_open):
-                self.__stats_positive_gap[">+" + str(gap) + " %"]["% " + str(int(close_pct * 10) / 10) + "%"] = cpf[idx]
+                self.__stats_positive_gap[">+" + str(gap) + " %"][str(int(close_pct * 10) / 10) + "%"] = cpf[idx]
 
             # all positive gap-ups
             close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if daily_open_pct[i] > 0]
@@ -301,20 +313,20 @@ class PriceAnalysis:
             else:
                 cpf = [self.__NO__DATA_INDICATOR] * len(x_cpf_positive_open)
             for idx, close_pct in enumerate(x_cpf_positive_open):
-                self.__stats_positive_gap[">0 %"]["% " + str(int(close_pct * 10) / 10) + "%"] = cpf[idx]
+                self.__stats_positive_gap[">0 %"][str(int(close_pct * 10) / 10) + "%"] = cpf[idx]
 
         # gap down
         for gap in gap_negative_list:
             close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if ((daily_open_pct[i] >= gap) and (daily_open_pct[i] < (
                     gap + self.__STEP_GAP_OPEN)))]
             key = "[" + str(gap) + "; " + str(gap - self.__STEP_GAP_OPEN) + "[%"
-            self.__stats_negative_gap["+" + str(gap) + " %"] = {"gap": key}
+            self.__stats_negative_gap[str(gap) + " %"] = {"gap": key}
             if close_list:
                 cpf = self.__calc_cpf([-i for i in close_list], [-i for i in x_cpf_negative_open])
             else:
                 cpf = [self.__NO__DATA_INDICATOR]*len(x_cpf_negative_open)
             for idx, close_pct in enumerate(x_cpf_negative_open):
-                self.__stats_negative_gap["+" + str(gap) + " %"]["% " + str(int(close_pct * 10) / 10) + "%"] = cpf[idx]
+                self.__stats_negative_gap[str(gap) + " %"][str(int(close_pct * 10) / 10) + "%"] = cpf[idx]
 
         # above the max gap considered in the list
         close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if daily_open_pct[i] < gap_positive_list[-1]]
@@ -326,7 +338,7 @@ class PriceAnalysis:
         else:
             cpf = [self.__NO__DATA_INDICATOR] * len(x_cpf_negative_open)
         for idx, close_pct in enumerate(x_cpf_negative_open):
-            self.__stats_negative_gap[">+" + str(gap) + " %"]["% " + str(int(close_pct * 10) / 10) + "%"] = cpf[idx]
+            self.__stats_negative_gap[">+" + str(gap) + " %"][str(int(close_pct * 10) / 10) + "%"] = cpf[idx]
 
         # all negative gap-ups
         close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if daily_open_pct[i] < 0]
@@ -337,7 +349,7 @@ class PriceAnalysis:
         else:
             cpf = [self.__NO__DATA_INDICATOR] * len(x_cpf_negative_open)
         for idx, close_pct in enumerate(x_cpf_negative_open):
-            self.__stats_negative_gap[">0 %"]["% " + str(int(close_pct * 10) / 10) + "%"] = cpf[idx]
+            self.__stats_negative_gap[">0 %"][str(int(close_pct * 10) / 10) + "%"] = cpf[idx]
 
     @staticmethod
     def __calc_cpf(data: list, x_cpf: list) -> list:
@@ -351,8 +363,9 @@ class PriceAnalysis:
 
         cdf = []
         n = float(len(data))
-        for x in x_cpf:
-            cdf.append(100. * sum(i <= x for i in data) / n)
+        if n > 0:
+            for x in x_cpf:
+                cdf.append(100. * sum(i <= x for i in data) / n)
         return cdf
 
     def __calc_cumulative_probability(self, input_data: list) -> dict:
@@ -429,6 +442,7 @@ class PriceAnalysis:
         self.__price_history_df.insert(len(self.__price_history_df.keys()), "Close wrt close", 0)
         self.__price_history_df = self.__price_history_df.reset_index(level=0)
         self.__years_list = list(set(years_list))  # get unique years
+        self.__number_of_trading_days = len(weekday_list)
 
     def query_vix(self):
         """
@@ -462,31 +476,67 @@ class PriceAnalysis:
 
         # Check values of the vix <= min(BINS_VIX)
         filtered_df = self.__price_history_df.loc[self.__price_history_df['VIX'] <= min(self.__BINS_VIX)]
+        vix_key = str(min(self.__BINS_VIX))
         if not filtered_df.empty:
-            if not filtered_df.empty:
-                self.__dict_daily_change_vix_bins[str(min(self.__BINS_VIX))]["positive"] = \
-                    filtered_df.loc[filtered_df["Close wrt close"] >= 0]["Close wrt close"].tolist()
-                self.__dict_daily_change_vix_bins[str(min(self.__BINS_VIX))]["negative"] = \
-                    filtered_df.loc[filtered_df["Close wrt close"] < 0]["Close wrt close"].tolist()
+            positive_daily_change = filtered_df.loc[filtered_df["Close wrt close"] >= 0]["Close wrt close"].tolist()
+            negative_daily_change = filtered_df.loc[filtered_df["Close wrt close"] < 0]["Close wrt close"].tolist()
+            count_positive_days = len(positive_daily_change)
+            count_negative_days = len(negative_daily_change)
+            count_days = count_positive_days + count_negative_days
+            if len(negative_daily_change) > 0:
+                self.__dict_daily_change_vix_bins[vix_key]["cumulative negative"] = self.__calc_cumulative_probability(negative_daily_change)
+                self.__dict_daily_change_vix_bins[vix_key]["cumulative negative"]["frequency [%]"] = 100. * count_negative_days / count_days
+                self.__dict_daily_change_vix_bins[vix_key]["cumulative negative"]["count days"] = count_negative_days
+            if len(positive_daily_change) > 0:
+                self.__dict_daily_change_vix_bins[vix_key]["cumulative positive"] = self.__calc_cumulative_probability(positive_daily_change)
+                self.__dict_daily_change_vix_bins[vix_key]["cumulative positive"]["frequency [%]"] = 100. * count_positive_days / count_days
+                self.__dict_daily_change_vix_bins[vix_key]["cumulative positive"]["count days"] = count_positive_days
+        self.__dict_daily_change_vix_bins[vix_key]["cumulative negative"]["VIX"] = vix_key+"]"
+        self.__dict_daily_change_vix_bins[vix_key]["cumulative positive"]["VIX"] = vix_key+"]"
 
         # Check values of the vix > max(BINS_VIX)
         filtered_df = self.__price_history_df.loc[self.__price_history_df['VIX'] > max(self.__BINS_VIX)]
+        vix_key = str(max(self.__BINS_VIX)) + "+"
         if not filtered_df.empty:
-            self.__dict_daily_change_vix_bins[max(self.__BINS_VIX)+"+"]["positive"] = \
-                filtered_df.loc[filtered_df["Close wrt close"] >= 0]["Close wrt close"].tolist()
-            self.__dict_daily_change_vix_bins[max(self.__BINS_VIX)+"+"]["negative"] = \
-                filtered_df.loc[filtered_df["Close wrt close"] < 0]["Close wrt close"].tolist()
+            positive_daily_change = filtered_df.loc[filtered_df["Close wrt close"] >= 0]["Close wrt close"].tolist()
+            negative_daily_change = filtered_df.loc[filtered_df["Close wrt close"] < 0]["Close wrt close"].tolist()
+            count_positive_days = len(positive_daily_change)
+            count_negative_days = len(negative_daily_change)
+            count_days = count_positive_days + count_negative_days
+            if len(negative_daily_change) > 0:
+                self.__dict_daily_change_vix_bins[vix_key]["cumulative negative"] = self.__calc_cumulative_probability(negative_daily_change)
+                self.__dict_daily_change_vix_bins[vix_key]["cumulative negative"]["frequency [%]"] = 100. * count_negative_days / count_days
+                self.__dict_daily_change_vix_bins[vix_key]["cumulative negative"]["count days"] = count_negative_days
+            if len(positive_daily_change) > 0:
+                self.__dict_daily_change_vix_bins[vix_key]["cumulative positive"] = self.__calc_cumulative_probability(positive_daily_change)
+                self.__dict_daily_change_vix_bins[vix_key]["cumulative positive"]["frequency [%]"] = 100. * count_positive_days / count_days
+                self.__dict_daily_change_vix_bins[vix_key]["cumulative positive"]["count days"] = count_positive_days
+        self.__dict_daily_change_vix_bins[vix_key]["cumulative negative"]["VIX"] = "]" + vix_key
+        self.__dict_daily_change_vix_bins[vix_key]["cumulative positive"]["VIX"] = "]" + vix_key
 
         # Check the vix intervals
-        for idx in range(1, len(self.__BINS_VIX) - 1):
+        for idx in range(len(self.__BINS_VIX) - 1):
             vix_min = self.__BINS_VIX[idx]
             vix_max = self.__BINS_VIX[idx + 1]
             filtered_df = self.__price_history_df.loc[(self.__price_history_df['VIX'] > vix_min) & (self.__price_history_df['VIX'] <= vix_max)]
+            vix_key = str(vix_max)
             if not filtered_df.empty:
-                self.__dict_daily_change_vix_bins[str(vix_max)]["positive"] = \
-                    filtered_df.loc[filtered_df["Close wrt close"] >= 0]["Close wrt close"].tolist()
-                self.__dict_daily_change_vix_bins[str(vix_max)]["negative"] = \
-                    filtered_df.loc[filtered_df["Close wrt close"] < 0]["Close wrt close"].tolist()
+                positive_daily_change = filtered_df.loc[filtered_df["Close wrt close"] >= 0]["Close wrt close"].tolist()
+                negative_daily_change = filtered_df.loc[filtered_df["Close wrt close"] < 0]["Close wrt close"].tolist()
+                count_positive_days = len(positive_daily_change)
+                count_negative_days = len(negative_daily_change)
+                count_days = count_positive_days + count_negative_days
+                if len(negative_daily_change) > 0:
+                    self.__dict_daily_change_vix_bins[vix_key]["cumulative negative"] = self.__calc_cumulative_probability(negative_daily_change)
+                    self.__dict_daily_change_vix_bins[vix_key]["cumulative negative"]["frequency [%]"] = 100. * count_negative_days / count_days
+                    self.__dict_daily_change_vix_bins[vix_key]["cumulative negative"]["count days"] = count_negative_days
+                if len(positive_daily_change) > 0:
+                    self.__dict_daily_change_vix_bins[vix_key]["cumulative positive"] = self.__calc_cumulative_probability(positive_daily_change)
+                    self.__dict_daily_change_vix_bins[vix_key]["cumulative positive"]["frequency [%]"] = 100. * count_positive_days / count_days
+                    self.__dict_daily_change_vix_bins[vix_key]["cumulative positive"]["count days"] = count_positive_days
+            self.__dict_daily_change_vix_bins[vix_key]["cumulative negative"]["VIX"] = "]"+str(vix_min)+"; " + str(vix_max) + "]"
+            self.__dict_daily_change_vix_bins[vix_key]["cumulative positive"]["VIX"] = "]"+str(vix_min)+"; " + str(vix_max) + "]"
+
 
     def __write_html(self):
         """
@@ -510,7 +560,7 @@ class PriceAnalysis:
                 fo.write('<br/>' + '<br/>' + "Daily change (CLOSE with respect to the previous day's CLOSE)")
                 fo.write('<br/>')
                 fo.write(self.__daily_change_df.to_html().replace('<td>', '<td align="center">'))
-                fo.write('<br/>' + '<br/>' + "Weekly change (Monday CLOSE with respect to the previous week Friday's CLOSE)")
+                fo.write('<br/>' + '<br/>' + "Weekly change (Friday CLOSE with respect to the previous week Friday's CLOSE or Monday's OPEN)")
                 fo.write('<br/>')
                 fo.write(self.__weekly_change_df.to_html().replace('<td>', '<td align="center">'))
                 fo.write('<br/>')
@@ -549,31 +599,61 @@ class PriceAnalysis:
 
                 # ================================= GAP UP / DOWN STATS ===================================
                 fo.write('<br/><br/><br/>')
-                fo.write("<center><b>Opening gap-up / down analysis</b></center>")
+                fo.write("<center><b>Open gap-up / down analysis</b></center>")
                 fo.write('<br/>')
-                fo.write("<br/>Cumulative probability of <u>positive daily opens</u>:")
+                fo.write("<br/><b>Cumulative probability of the daily change</b> when a <u>positive market opening</u> occurs:")
+                fo.write('<br/><br/>')
                 gap_up_df = pd.DataFrame([self.__stats_positive_gap[i] for i in self.__stats_positive_gap.keys()])
                 gap_up_df.set_index("gap", inplace=True)
                 gap_up_df.index.name = None
                 fo.write(gap_up_df.to_html().replace('<td>', '<td align="center">'))
                 fo.write("<b>HOW TO USE THE TABLE:</b>")
-                fo.write("<br/> - each row contains the data of all the days with a opening withing the specified range ")
-                fo.write("<br/> - the cell value is the <u>probability that the close is <b>lower or equal</b> the % in the column header</u> ")
-                fo.write("<br> - USAGE: observe the open gap. Choose the sell put strike based on the close pct with the lowest probability.")
-                fo.write("<br/> - note: the percentage of the asset are calculated with respect to the previous day's close")
+                fo.write("<br/> - row index: range of the opening gap-up")
+                fo.write("<br/> - column: daily change [%] (close with respect to the previous day's close")
+                fo.write("<br/> - cell: <u>cumulative probability [%]</u> that the close is <b>lower or equal</b> the change in the column header")
+                fo.write("<br> - USAGE: observe the open gap. Choose the daily sell put strike based on the close pct with the lowest probability.")
 
-                fo.write('<br/>')
-                fo.write('<br/>')
-                fo.write("<br/>Cumulative probability of <u>negative daily opens</u>:")
+                fo.write('<br/><br/>')
+                fo.write("<br/><b>Cumulative probability of the daily change</b> when a <u>negative market opening</u> occurs:")
+                fo.write('<br/><br/>')
                 gap_down_df = pd.DataFrame([self.__stats_negative_gap[i] for i in self.__stats_negative_gap.keys()])
                 gap_down_df.set_index("gap", inplace=True)
                 gap_down_df.index.name = None
                 fo.write(gap_down_df.to_html().replace('<td>', '<td align="center">'))
                 fo.write("<b>HOW TO USE THE TABLE:</b>")
-                fo.write("<br/> - each row contains the data of all the days with a opening withing the specified range ")
-                fo.write("<br/> - the cell value is the <u>probability that the close is <b>higher or equal</b> the % in the column header</u> ")
-                fo.write("<br> - USAGE: observe the open gap. Choose the sell put strike based on the close pct with the highest probability.")
-                fo.write("<br/> - note: the percentage of the asset are calculated with respect to the previous day's close")
+                fo.write("<br/> - row index: range of the opening gap-down")
+                fo.write("<br/> - column: daily change [%] (close with respect to the previous day's close")
+                fo.write("<br/> - cell: <u>cumulative probability [%]</u> that the close is <b>lower or equal</b> the change in the column header")
+                fo.write("<br> - USAGE: observe the open gap. Choose the daily sell put strike based on the close pct with the lowest probability.")
+
+                # ================================= DAILY CHANGE VS. VIX STATS ===================================
+                fo.write('<br/><br/><br/>')
+                fo.write("<center><b>Daily change according to VIX</b></center>")
+                fo.write('<br/>')
+                fo.write("<br/><b>Cumulative probability</b> of the <b>daily NEGATIVE change</b> according to the <u>vix level</u>:")
+                negative_day_vix_df = pd.DataFrame([self.__dict_daily_change_vix_bins[i]["cumulative negative"] for i in
+                                            self.__dict_daily_change_vix_bins.keys()])
+                negative_day_vix_df.set_index("VIX", inplace=True)
+                negative_day_vix_df.index.name = None
+                negative_day_vix_df = negative_day_vix_df.fillna(0)
+                fo.write(negative_day_vix_df.to_html().replace('<td>', '<td align="center">'))
+                fo.write("<b>HOW TO USE THE TABLE:</b>")
+                fo.write("<br/> - row index: range of the VIX")
+                fo.write("<br/> - column: daily change [%] (close with respect to the previous day's close")
+                fo.write("<br/> - cell: <u>cumulative probability [%]</u> that the close is <b>lower or equal</b> the change in the column header")
+                fo.write('<br/>')
+                fo.write("<br/><b>Cumulative probability</b> of the <b>daily POSITIVE change</b> according to the <u>vix level</u>:")
+                positive_day_vix_df = pd.DataFrame([self.__dict_daily_change_vix_bins[i]["cumulative positive"] for i in
+                                                    self.__dict_daily_change_vix_bins.keys()])
+                positive_day_vix_df.set_index("VIX", inplace=True)
+                positive_day_vix_df.index.name = None
+                positive_day_vix_df = positive_day_vix_df.fillna(0)
+                fo.write(positive_day_vix_df.to_html().replace('<td>', '<td align="center">'))
+                fo.write("<b>HOW TO USE THE TABLE:</b>")
+                fo.write("<br/> - row index: range of the VIX")
+                fo.write("<br/> - column: daily change [%] (close with respect to the previous day's close")
+                fo.write("<br/> - cell: <u>cumulative probability [%]</u> that the close is <b>lower or equal</b> the change in the column header")
+
 
         except Exception as e:
             print('Cannot create the html file:', e)
@@ -782,12 +862,20 @@ class PriceAnalysis:
         Calculate open and close change with respect to previous day close.
         """
 
-        for idx in range(1, len(self.__price_history_df)):
-            previous_day_close = self.__price_history_df.at[idx - 1, "Close"]
-            day_open = self.__price_history_df.at[idx, "Open"]
-            day_close = self.__price_history_df.at[idx, "Close"]
-            self.__price_history_df.at[idx, "Open wrt close"] = 100.0 * (day_open - previous_day_close) / previous_day_close
-            self.__price_history_df.at[idx, "Close wrt close"] = 100.0 * (day_close - previous_day_close) / previous_day_close
+        open_list = self.__price_history_df["Open"].to_numpy()
+        close_list = self.__price_history_df["Close"].to_numpy()
+        open_wrt_close_list = [0] * len(open_list)
+        close_wrt_close_list = [0] * len(open_list)
+
+        for idx in range(len(open_list)-1):
+            previous_day_close = close_list[idx + 1]
+            day_open = open_list[idx]
+            day_close = close_list[idx]
+            close_wrt_close_list[idx] = 100.0 * (day_close - previous_day_close) / previous_day_close
+            open_wrt_close_list[idx] = 100.0 * (day_open - previous_day_close) / previous_day_close
+
+        self.__price_history_df["Open wrt close"] = open_wrt_close_list
+        self.__price_history_df["Close wrt close"] = close_wrt_close_list
 
     def __calc_weekly_statistics(self):
         """
