@@ -551,15 +551,15 @@ class PriceAnalysis:
         Write output file with all the statistics.
         """
 
-        num_trading_days = int(len(self.__price_history_df.index))
         try:
             with open(os.path.expanduser(self.__filename), 'w') as fo:
                 fo.write("<html>\n<head>\n<title> \nOutput Data in an HTML file \
                           </title>\n</head> <body><h1><center>" + self.__ticker + "</center></h1>\n</body></html>")
                 fo.write("Statistical analysis " + self.__ticker + " " + self.__years_analysis)
                 fo.write("<br/>Time period: " + self.__date_start.strftime('%d/%m/%Y'))
-                fo.write(" al " + self.__date_end.strftime('%d/%m/%Y'))
-                fo.write(" (" + str(int(self.__number_of_weeks)) + " settimane)")
+                fo.write(" to " + self.__date_end.strftime('%d/%m/%Y'))
+                fo.write(" (" + str(int(self.__number_of_weeks)) + " weeks)")
+                fo.write("<br/>Number of trading days analyzed: " + str(self.__number_of_trading_days))
                 fo.write("<br/>Documented created on: " + datetime.datetime.today().strftime('%d/%m/%Y'))
                 fo.write('<br/>' + "Tables contain the <u>cumulative probability</u> of change.")
                 # ================================= Daily and Weekly STATS ===================================
@@ -572,19 +572,21 @@ class PriceAnalysis:
                 fo.write('<br/>')
                 fo.write(self.__weekly_change_df.to_html().replace('<td>', '<td align="center">'))
                 fo.write('<br/>')
+                fo.write(self.__weekly_change_monday_conditional_df.to_html().replace('<td>', '<td align="center">'))
+                fo.write('<br/>')
                 # ================================= DTE STATS ===================================
                 fo.write('<br/><br/>')
                 fo.write("<center><b>DTE analysis for sell put debit</b></center>")
                 fo.write('<br/><br/>')
                 if self.__weekly_dte_change_df is not None:
                     fo.write(self.__weekly_dte_change_df.to_html().replace('<td>', '<td align="center">'))
-                fo.write('<br/>')
-                fo.write(self.__weekly_change_monday_conditional_df.to_html().replace('<td>', '<td align="center">'))
+
+                # monthly dte
                 if self.__monthly_dte_change_df is not None:
                     fo.write('<br/>' + '<br/>' + "Change in " + str(self.__MONTH_TRADING_DAYS))
                     fo.write(" DTE (effective trading days, Daily OPEN)")
-                    fo.write("<br>" + str(num_trading_days) + " analyzed days (last OPEN ")
-                    fo.write(self.__price_history_df["Date"][num_trading_days - self.__DTE_LONG].strftime(
+                    fo.write("<br>" + str(self.__number_of_trading_days) + " analyzed days (last OPEN ")
+                    fo.write(self.__price_history_df["Date"][self.__number_of_trading_days - self.__DTE_LONG].strftime(
                         '%d/%m/%Y') + ")")
                     fo.write('<br/>')
                     fo.write(self.__monthly_dte_change_df.to_html().replace('<td>', '<td align="center">'))
@@ -1031,18 +1033,22 @@ class PriceAnalysis:
         :return: dataframe with the DTE changes for each day of the selected period
         :rtype: pd.DataFrame"""
 
-        num_data = len(self.__price_history_df.index)
-        change_list = []
-        date_range = []
-        for idx in range(0, num_data - dte):
-            start = self.__price_history_df.iloc[idx]["Close"]
-            end = self.__price_history_df.iloc[idx + dte]["Close"]
-            date_range.append(self.__price_history_df.iloc[idx]["Date"].strftime('%d/%m - ') +
-                              self.__price_history_df.iloc[idx + dte]["Date"].strftime('%d/%m/%Y'))
+        change_list = [0] * (self.__number_of_trading_days - dte)
+        date_range = [0] * (self.__number_of_trading_days - dte)
+        # element 0 is the top of the dataframe (most recent date)
+        # change is calculated as: (CLOSE(DTE)-CLOSE(today)) / CLOSE(today)
+        # to_list to speed-up the loop over the dataframe
+        price_close_list = self.__price_history_df["Close"].to_list()
+        date_list = self.__price_history_df["Date"].to_list()
+        a = 1
+        for idx in range(self.__number_of_trading_days - 1, dte - 1, -1):
+            close_today = price_close_list[idx]
+            close_dte = price_close_list[idx - dte]
             change = 0
-            if start != 0:
-                change = 100.0 * (end - start) / start
-            change_list.append(change)
+            if close_today != 0:
+                change = 100.0 * (close_dte - close_today) / close_today
+            change_list[idx - dte] = change
+            date_range[idx - dte] = date_list[idx].strftime('%d/%m - ') + date_list[idx - dte].strftime('%d/%m/%Y')
         return {"change_list": change_list, "date range": date_range}
 
     @staticmethod

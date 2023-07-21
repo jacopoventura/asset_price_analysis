@@ -21,7 +21,7 @@ if __name__ == '__main__':
     t0 = timeit.default_timer()
 
     # Query data from yahoo finance
-    start = datetime.datetime(2023, 7, 1)  # Year, Month, Day
+    start = datetime.datetime(2022, 9, 1)  # Year, Month, Day
     end = datetime.datetime(2023, 7, 19)  # Year, Month, Day
     spy = PriceAnalysis(TICKER, start, end, PATH_TO_REPORT)
     spy.run()
