@@ -417,16 +417,24 @@ class PriceAnalysis:
         """
 
         try:
-            self.__price_history_df = web.DataReader(self.__ticker,
-                                                     self.__SOURCE,
-                                                     self.__date_start,
-                                                     self.__date_end, 10)
+            try:
+                self.__price_history_df = yf.download(self.__ticker,
+                                                  self.__date_start,
+                                                  self.__date_end)
+            except Exception:
+                self.__price_history_df = web.DataReader(self.__ticker,
+                                                 self.__SOURCE,
+                                                 self.__date_start,
+                                                 self.__date_end, 10)
         except Exception as e:
             print('Cannot query historical data:', e)
             sys.exit(1)  # stop the main function with exit code 1
 
         # sort by date (first row the most recent date)
-        self.__price_history_df.sort_values("Date")
+        date_list = self.__price_history_df.index
+        # a date in the past is always smaller than a more recent day
+        if date_list[0] < date_list[1]:
+            self.__price_history_df.sort_index(inplace=True, ascending=False)
 
         weekday_list = []
         weeknumber_list = []
@@ -1040,7 +1048,6 @@ class PriceAnalysis:
         # to_list to speed-up the loop over the dataframe
         price_close_list = self.__price_history_df["Close"].to_list()
         date_list = self.__price_history_df["Date"].to_list()
-        a = 1
         for idx in range(self.__number_of_trading_days - 1, dte - 1, -1):
             close_today = price_close_list[idx]
             close_dte = price_close_list[idx - dte]
