@@ -256,7 +256,7 @@ class PriceAnalysis:
                 for i, close in enumerate(x_cpf_positive_open):
                     self.__stats_positive_gap[str(gap) + " %"][str(int(close*10)/10)+"%"] = cpf[i]
             else:
-                self.__stats_positive_gap[str(gap) + " %"][str(int(close * 10) / 10) + "%"] = 0
+                self.__stats_positive_gap[str(gap) + " %"][str(int(0 * 10) / 10) + "%"] = 0
 
         # above the max gap considered in the list
         close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if daily_open_pct[i] > gap_positive_list[-1]]
@@ -267,7 +267,7 @@ class PriceAnalysis:
             for i, close in enumerate(x_cpf_positive_open):
                 self.__stats_positive_gap[">+" + str(gap_positive_list[-1]) + " %"][str(int(close * 10) / 10) + "%"] = cpf[i]
         else:
-            self.__stats_positive_gap[">+" + str(gap_positive_list[-1]) + " %"][str(int(close * 10) / 10) + "%"] = 0
+            self.__stats_positive_gap[">+" + str(gap_positive_list[-1]) + " %"][str(int(0 * 10) / 10) + "%"] = 0
 
         # all positive gap-ups
         close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if daily_open_pct[i] > 0]
@@ -469,7 +469,7 @@ class PriceAnalysis:
             sys.exit(1)  # stop the main function with exit code 1
 
         # Append VIX column after the last column of the dataframe
-        self.__price_history_df["VIX"] = 0
+        self.__price_history_df["VIX"] = 0.
         vix_date_list = vix_history_df.index.values
         for vix_date in vix_date_list:
             vix = vix_history_df.loc[vix_date]["Close"]
@@ -862,11 +862,15 @@ class PriceAnalysis:
         :rtype: pd.DataFrame
         """
 
-        change_list_df = self.__calc_change_DTE(dte)
+        change_list_df, drawdown_dict, vix_change_dict = self.__calc_change_DTE(dte)
         if dte == self.__MONTH_TRADING_DAYS:
             self.__change_list_monthly_dte_for_plot_df = change_list_df
         change_list = change_list_df["change_list"]
         change_positive, change_negative = self.__calc_distribution(change_list, max_change_pct, self.__STEP)
+        change_positive["Max drawdown [%]"] = np.min(drawdown_dict["positive week"])
+        change_negative["Max drawdown [%]"] = np.min(drawdown_dict["negative week"])
+        change_positive["Max VIX increment [%]"] = np.max(vix_change_dict["positive week"])
+        change_negative["Max VIX increment [%]"] = np.max(vix_change_dict["negative week"])
         change_positive["Case"] = "Daily to " + str(int(dte)) + "DTE: positive"
         change_negative["Case"] = "Daily to " + str(int(dte)) + "DTE: negative"
         # noinspection PyTypeChecker
@@ -901,7 +905,8 @@ class PriceAnalysis:
         """
 
         # Monday to Friday (first to last week days)
-        weekly_change_monday_to_friday = self.__calc_weekly_movement()
+        weekly_change_monday_to_friday, weekly_change_monday_to_friday_drawdown_dict, weekly_change_monday_to_friday_vix_change_dict = (
+            self.__calc_weekly_movement())
         monday_to_friday_positive_dict, monday_to_friday_negative_dict = self.__calc_distribution(
             weekly_change_monday_to_friday,
             self.__WEEK_MAX_CHANGE_PCT,
@@ -910,13 +915,32 @@ class PriceAnalysis:
         monday_to_friday_negative_dict["Case"] = "Monday to Friday: negative"
 
         # Friday to friday (last to last week days)
-        weekly_change_friday_to_friday = self.__calc_weekly_friday_to_friday_movement()
+        weekly_change_friday_to_friday, weekly_change_friday_to_friday_drawdown_dict, weekly_change_friday_to_friday_vix_change_dict = (
+            self.__calc_weekly_friday_to_friday_movement())
         friday_to_friday_positive_dict, friday_to_friday_negative_dict = self.__calc_distribution(
             weekly_change_friday_to_friday,
             self.__WEEK_MAX_CHANGE_PCT,
             self.__STEP)
         friday_to_friday_positive_dict["Case"] = "Friday to Friday: positive"
         friday_to_friday_negative_dict["Case"] = "Friday to Friday: negative"
+
+        # Set drawdown and vix change info
+        monday_to_friday_positive_dict["Max drawdown [%]"] = np.min(weekly_change_monday_to_friday_drawdown_dict["positive week"])
+        monday_to_friday_positive_dict["Avg drawdown [%]"] = np.mean(weekly_change_monday_to_friday_drawdown_dict["positive week"])
+        monday_to_friday_positive_dict["Max VIX increment [%]"] = np.max(weekly_change_monday_to_friday_vix_change_dict["positive week"])
+        monday_to_friday_positive_dict["Avg VIX increment [%]"] = np.mean(weekly_change_monday_to_friday_vix_change_dict["positive week"])
+        monday_to_friday_negative_dict["Max drawdown [%]"] = np.min(weekly_change_monday_to_friday_drawdown_dict["negative week"])
+        monday_to_friday_negative_dict["Avg drawdown [%]"] = np.mean(weekly_change_monday_to_friday_drawdown_dict["negative week"])
+        monday_to_friday_negative_dict["Max VIX increment [%]"] = np.max(weekly_change_monday_to_friday_vix_change_dict["negative week"])
+        monday_to_friday_negative_dict["Avg VIX increment [%]"] = np.mean(weekly_change_monday_to_friday_vix_change_dict["negative week"])
+        friday_to_friday_positive_dict["Max drawdown [%]"] = np.min(weekly_change_friday_to_friday_drawdown_dict["positive week"])
+        friday_to_friday_positive_dict["Avg drawdown [%]"] = np.mean(weekly_change_friday_to_friday_drawdown_dict["positive week"])
+        friday_to_friday_positive_dict["Max VIX increment [%]"] = np.max(weekly_change_friday_to_friday_vix_change_dict["positive week"])
+        friday_to_friday_positive_dict["Avg VIX increment [%]"] = np.mean(weekly_change_friday_to_friday_vix_change_dict["positive week"])
+        friday_to_friday_negative_dict["Max drawdown [%]"] = np.min(weekly_change_friday_to_friday_drawdown_dict["negative week"])
+        friday_to_friday_negative_dict["Avg drawdown [%]"] = np.mean(weekly_change_friday_to_friday_drawdown_dict["negative week"])
+        friday_to_friday_negative_dict["Max VIX increment [%]"] = np.max(weekly_change_friday_to_friday_vix_change_dict["negative week"])
+        friday_to_friday_negative_dict["Avg VIX increment [%]"] = np.mean(weekly_change_friday_to_friday_vix_change_dict["negative week"])
 
         # noinspection PyTypeChecker
         self.__weekly_change_df = pd.DataFrame.from_dict([monday_to_friday_positive_dict,
@@ -987,14 +1011,50 @@ class PriceAnalysis:
                     self.__weekly_change_first_day_negative.append(week_change)
                     self.__weekly_change_first_day_negative_week_count.append(week_counter)
 
-    def __calc_weekly_movement(self) -> list:
+
+
+    @staticmethod
+    def __calc_drawdown(asset_data_selected_timeframe_df: pd.DataFrame, price_open: float) -> float:
+        """
+        Calculate the drawdown in the asset price.
+        :param asset_data_selected_timeframe_df
+        :type: pd.DataFrame
+        :param price_open
+        :type: float
+        :return: drawdown
+        :rtype: float
+        """
+        price_minimum = asset_data_selected_timeframe_df["Low"].values.min()
+        return 100. * (price_minimum - price_open) / price_open
+
+
+    @staticmethod
+    def __calc_max_change_vix(asset_data_selected_timeframe_df: pd.DataFrame, vix_start: float) -> float:
+        """
+        Calculate the max change in VIX.
+        :param asset_data_selected_timeframe_df
+        :type: pd.DataFrame
+        :param vix_start
+        :type: float
+        :return: vix change
+        :rtype: float
+        """
+        vix_max = asset_data_selected_timeframe_df["VIX"].values.max()
+        return 100. * (vix_max - vix_start) / vix_start
+
+
+    def __calc_weekly_movement(self) -> tuple:
         """
         Calculate the weekly movement of the ticker. Weekdays shall be at least 2.
-        :return: list with the weekly changes
-        :rtype: list
+        :return: list with the weekly changes and its drawdown
+        :rtype: tuple
         """
 
         change_monday_to_friday_list = []
+        drawdown_dict = {"positive week": [],
+                         "negative week": []}
+        change_vix_dict = {"positive week": [],
+                         "negative week": []}
         for year in self.__years_list:
             week_range_in_the_year = self.__calc_number_of_weeks_in_year(year)
             for week_number in range(week_range_in_the_year[0], week_range_in_the_year[1] + 1):
@@ -1002,21 +1062,32 @@ class PriceAnalysis:
                 week_df = self.__price_history_df.loc[self.__price_history_df["Week number"] == week_number]
                 week_open = week_df["Open"].iloc[0]
                 week_close = week_df["Close"].iloc[-1]
+                vix_open = week_df["VIX"].iloc[0]
+                if week_close >= week_open:
+                    drawdown_dict["positive week"].append(self.__calc_drawdown(week_df, week_open))
+                    change_vix_dict["positive week"].append(self.__calc_max_change_vix(week_df, vix_open))
+                else:
+                    drawdown_dict["negative week"].append(self.__calc_drawdown(week_df, week_open))
+                    change_vix_dict["negative week"].append(self.__calc_max_change_vix(week_df, vix_open))
                 change = 0
                 if week_open != 0:
                     change = 100.0 * (week_close - week_open) / week_open
                 change_monday_to_friday_list.append(change)
-        return change_monday_to_friday_list
+        return change_monday_to_friday_list, drawdown_dict, change_vix_dict
 
-    def __calc_weekly_friday_to_friday_movement(self) -> list:
+    def __calc_weekly_friday_to_friday_movement(self) -> tuple:
         """
         Calculate the weekly movement of the ticker (last day to last day).
         The current week shall have at least 4 weekdays.
-        :return: list with the weekly changes
-        :rtype: list
+        :return: list with the weekly changes and drawdown
+        :rtype: tuple
         """
 
         change_friday_to_friday_list = []
+        drawdown_dict = {"positive week": [],
+                         "negative week": []}
+        change_vix_dict = {"positive week": [],
+                         "negative week": []}
         for year in self.__years_list:
             weeks_in_the_year = self.__calc_number_of_weeks_in_year(year)
             for week_number in range(weeks_in_the_year[0] + 1, weeks_in_the_year[1] + 1):
@@ -1026,20 +1097,33 @@ class PriceAnalysis:
                     self.__price_history_df["Week number"] == week_number - 1]
                 week_close = week_df["Close"].iloc[-1]
                 previous_week_close = previous_week_df["Close"].iloc[-1]
+                vix_open = previous_week_df["VIX"].iloc[-1]
+                if week_close >= previous_week_close:
+                    drawdown_dict["positive week"].append(self.__calc_drawdown(week_df, previous_week_close))
+                    change_vix_dict["positive week"].append(self.__calc_max_change_vix(week_df, vix_open))
+                else:
+                    drawdown_dict["negative week"].append(self.__calc_drawdown(week_df, previous_week_close))
+                    change_vix_dict["negative week"].append(self.__calc_max_change_vix(week_df, vix_open))
                 # calculate weekly changes
                 change = 0
                 if previous_week_close != 0:
                     change = 100.0 * (week_close - previous_week_close) / previous_week_close
                 change_friday_to_friday_list.append(change)
-        return change_friday_to_friday_list
+        return change_friday_to_friday_list, drawdown_dict, change_vix_dict
 
-    def __calc_change_DTE(self, dte: int) -> dict:
+    def __calc_change_DTE(self, dte: int) -> tuple:
         """
         Calculate the price change (close to close) given an input DTE (Date To End) of every day of the price data.
         :param dte: Date To End (effective trading days until option expiration)
         :type dte: int
         :return: dataframe with the DTE changes for each day of the selected period
-        :rtype: pd.DataFrame"""
+        :rtype: tuple
+        """
+
+        drawdown_dict = {"positive week": [],
+                         "negative week": []}
+        change_vix_dict = {"positive week": [],
+                         "negative week": []}
 
         change_list = [0] * (self.__number_of_trading_days - dte)
         date_range = [0] * (self.__number_of_trading_days - dte)
@@ -1048,24 +1132,44 @@ class PriceAnalysis:
         # to_list to speed-up the loop over the dataframe
         price_close_list = self.__price_history_df["Close"].to_list()
         date_list = self.__price_history_df["Date"].to_list()
+        vix_list = self.__price_history_df["VIX"].to_list()
+        daily_low_list = self.__price_history_df["Low"].to_list()
+        # loop in inverse order: the open price is at location idx - dte, closing price at location idx
         for idx in range(self.__number_of_trading_days - 1, dte - 1, -1):
-            close_today = price_close_list[idx]
-            close_dte = price_close_list[idx - dte]
+            close_after_dte_days = price_close_list[idx]
+            open_price_at_close = price_close_list[idx - dte]
+            vix_within_dte = vix_list[(idx - dte):idx+1]
+            low_within_dte = daily_low_list[(idx - dte):idx+1]
+            vix_open = vix_within_dte[0]
+            max_vix = np.max(vix_within_dte)
+            vix_increase_max = 0
+            if vix_open != 0:
+                vix_increase_max = 100 * (max_vix - vix_open) / vix_open
+            lowest_low = np.min(low_within_dte)
             change = 0
-            if close_today != 0:
-                change = 100.0 * (close_dte - close_today) / close_today
+            drawdown = 0
+            if open_price_at_close != 0:
+                change = 100.0 * (close_after_dte_days - open_price_at_close) / open_price_at_close
+                if lowest_low != 0:
+                    drawdown = 100 * (lowest_low - open_price_at_close) / lowest_low
+                if change >= 0:
+                    drawdown_dict["positive week"].append(drawdown)
+                    change_vix_dict["positive week"].append(vix_increase_max)
+                else:
+                    drawdown_dict["negative week"].append(drawdown)
+                    change_vix_dict["negative week"].append(vix_increase_max)
             change_list[idx - dte] = change
             date_range[idx - dte] = date_list[idx].strftime('%d/%m - ') + date_list[idx - dte].strftime('%d/%m/%Y')
-        return {"change_list": change_list, "date range": date_range}
+        return {"change_list": change_list, "date range": date_range}, drawdown_dict, change_vix_dict
 
     @staticmethod
-    def __calc_positive_negative_change_lists(change_list: list) -> list:
+    def __calc_positive_negative_change_lists(change_list: list) -> tuple:
         """
         Split the input change list into positive change list and negative change list.
         :param change_list: list of price changes
         :type change_list: list
         :returns: lists of positive and negative changes
-        :rtype: list
+        :rtype: tuple
         """
 
         positive_change_list = sorted(list(filter(lambda change: change >= 0.0, change_list)))
@@ -1089,7 +1193,7 @@ class PriceAnalysis:
         self.__day_gapdown_df = \
             self.__price_history_df.loc[self.__price_history_df["Open wrt close"] < 0]
 
-    def __calc_distribution(self, change_list: list, pct_max: float, step: float) -> dict:
+    def __calc_distribution(self, change_list: list, pct_max: float, step: float) -> tuple:
         """
         Calculate the distributions of positive and negative changes.
         Calculate the cumulative probability distribution.
@@ -1100,7 +1204,8 @@ class PriceAnalysis:
         :param: step: step of percentage to calculate the cumulative distribution
         :type: float
         :returns: dictionaries of positive and negative changes with the cumulative distribution up to pct_max
-        :rtype: dict"""
+        :rtype: tuple
+        """
 
         positive_change, negative_change = self.__calc_positive_negative_change_lists(change_list)
         num_positive = len(positive_change)
