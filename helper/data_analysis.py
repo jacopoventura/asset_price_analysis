@@ -418,17 +418,21 @@ class PriceAnalysis:
 
         try:
             try:
-                self.__price_history_df = yf.download(self.__ticker,
-                                                  self.__date_start,
-                                                  self.__date_end)
+                self.__price_history_df = yf.Ticker(self.__ticker)
+                self.__price_history_df = self.__price_history_df.history(start=self.__date_start,
+                                                                          end=self.__date_end)
             except Exception:
                 self.__price_history_df = web.DataReader(self.__ticker,
-                                                 self.__SOURCE,
-                                                 self.__date_start,
-                                                 self.__date_end, 10)
+                                                         self.__SOURCE,
+                                                         self.__date_start,
+                                                         self.__date_end, 10)
         except Exception as e:
             print('Cannot query historical data:', e)
             sys.exit(1)  # stop the main function with exit code 1
+
+        # Remove hour from index column (date)
+        self.__price_history_df["Date"] = [d.date() for d in self.__price_history_df.index.to_list()]
+        self.__price_history_df.set_index("Date", inplace=True)
 
         # sort by date (first row the most recent date)
         date_list = self.__price_history_df.index
@@ -462,12 +466,16 @@ class PriceAnalysis:
         """
 
         try:
-            vix_history_df = yf.download('^VIX', start = self.__date_start_vix, end=self.__date_end)
+            # vix_history_df = yf.download('^VIX', start = self.__date_start_vix, end=self.__date_end)
+            vix_history_df = yf.Ticker("^VIX")
+            vix_history_df = vix_history_df.history(start=self.__date_start, end=self.__date_end)
 
         except Exception as e:
             print('Cannot query historical data of VIX:', e)
             sys.exit(1)  # stop the main function with exit code 1
 
+        vix_history_df["Date"] = [d.date() for d in vix_history_df.index.to_list()]
+        vix_history_df.set_index("Date", inplace=True)
         # Append VIX column after the last column of the dataframe
         self.__price_history_df["VIX"] = 0.
         vix_date_list = vix_history_df.index.values
