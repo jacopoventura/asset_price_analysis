@@ -1,3 +1,5 @@
+# Copyright (c) 2024 Jacopo Ventura
+
 import pandas as pd
 import timeit
 from helper.ES_analysis import EsPriceAnalysis

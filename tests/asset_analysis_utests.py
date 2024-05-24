@@ -1,3 +1,5 @@
+# Copyright (c) 2024 Jacopo Ventura
+
 import unittest
 import datetime
 import re
@@ -68,5 +70,3 @@ class TestCumulativeProbability(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-
-

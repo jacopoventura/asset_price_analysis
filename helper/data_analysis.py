@@ -1,3 +1,5 @@
+# Copyright (c) 2024 Jacopo Ventura
+
 import yfinance as yf
 import math
 import numpy as np
@@ -51,7 +53,7 @@ class PriceAnalysis:
         self.__DTE_LONG = 23
         self.__STEP = 1  # step to calculate the cumulative distribution
         self.__BINS_DAILY_CHANGE = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]
-        self.__BINS_VIX = [vix for vix in range(10,41,3)]
+        self.__BINS_VIX = [vix for vix in range(10, 41, 3)]
 
         self.__PLOT_COLUMN_WIDTH = 0.75
 
@@ -78,7 +80,6 @@ class PriceAnalysis:
                                               + '_to_' \
                                               + self.__date_end.strftime('%d%m%Y') \
                                               + '.html'
-
 
         date_start_vix = datetime.datetime(1990, 1, 2)
         if self.__date_start < date_start_vix:
@@ -490,7 +491,6 @@ class PriceAnalysis:
                 vix_history_close_list[idx] = vix_history_close_list[idx+1]
         self.__price_history_df["VIX"] = vix_history_close_list
 
-
     def __calc_daily_statistics_vix(self):
         """
         Calculate the cumulative probability of daily change (close to close) according to the VIX levels.
@@ -560,7 +560,6 @@ class PriceAnalysis:
                     self.__dict_daily_change_vix_bins[vix_key]["cumulative positive"]["count days"] = count_positive_days
             self.__dict_daily_change_vix_bins[vix_key]["cumulative negative"]["VIX"] = "]"+str(vix_min)+"; " + str(vix_max) + "]"
             self.__dict_daily_change_vix_bins[vix_key]["cumulative positive"]["VIX"] = "]"+str(vix_min)+"; " + str(vix_max) + "]"
-
 
     def __write_html(self):
         """
@@ -658,7 +657,7 @@ class PriceAnalysis:
                 fo.write('<br/>')
                 fo.write("<br/><b>Cumulative probability</b> of the <b>daily NEGATIVE change</b> according to the <u>vix level</u>:")
                 negative_day_vix_df = pd.DataFrame([self.__dict_daily_change_vix_bins[i]["cumulative negative"] for i in
-                                            self.__dict_daily_change_vix_bins.keys()])
+                                                    self.__dict_daily_change_vix_bins.keys()])
                 negative_day_vix_df.set_index("VIX", inplace=True)
                 negative_day_vix_df.index.name = None
                 negative_day_vix_df = negative_day_vix_df.fillna(0)
@@ -679,7 +678,6 @@ class PriceAnalysis:
                 fo.write("<br/> - row index: range of the VIX")
                 fo.write("<br/> - column: daily change [%] (close with respect to the previous day's close")
                 fo.write("<br/> - cell: <u>cumulative probability [%]</u> that the close is <b>lower or equal</b> the change in the column header")
-
 
         except Exception as e:
             print('Cannot create the html file:', e)
@@ -1019,8 +1017,6 @@ class PriceAnalysis:
                     self.__weekly_change_first_day_negative.append(week_change)
                     self.__weekly_change_first_day_negative_week_count.append(week_counter)
 
-
-
     @staticmethod
     def __calc_drawdown(asset_data_selected_timeframe_df: pd.DataFrame, price_open: float) -> float:
         """
@@ -1034,7 +1030,6 @@ class PriceAnalysis:
         """
         price_minimum = asset_data_selected_timeframe_df["Low"].values.min()
         return 100. * (price_minimum - price_open) / price_open
-
 
     @staticmethod
     def __calc_max_change_vix(asset_data_selected_timeframe_df: pd.DataFrame, vix_start: float) -> float:
@@ -1050,7 +1045,6 @@ class PriceAnalysis:
         vix_max = asset_data_selected_timeframe_df["VIX"].values.max()
         return 100. * (vix_max - vix_start) / vix_start
 
-
     def __calc_weekly_movement(self) -> tuple:
         """
         Calculate the weekly movement of the ticker. Weekdays shall be at least 2.
@@ -1062,7 +1056,7 @@ class PriceAnalysis:
         drawdown_dict = {"positive week": [],
                          "negative week": []}
         change_vix_dict = {"positive week": [],
-                         "negative week": []}
+                           "negative week": []}
         for year in self.__years_list:
             week_range_in_the_year = self.__calc_number_of_weeks_in_year(year)
             for week_number in range(week_range_in_the_year[0], week_range_in_the_year[1] + 1):
@@ -1095,7 +1089,7 @@ class PriceAnalysis:
         drawdown_dict = {"positive week": [],
                          "negative week": []}
         change_vix_dict = {"positive week": [],
-                         "negative week": []}
+                           "negative week": []}
         for year in self.__years_list:
             weeks_in_the_year = self.__calc_number_of_weeks_in_year(year)
             for week_number in range(weeks_in_the_year[0] + 1, weeks_in_the_year[1] + 1):
@@ -1131,7 +1125,7 @@ class PriceAnalysis:
         drawdown_dict = {"positive week": [],
                          "negative week": []}
         change_vix_dict = {"positive week": [],
-                         "negative week": []}
+                           "negative week": []}
 
         change_list = [0] * (self.__number_of_trading_days - dte)
         date_range = [0] * (self.__number_of_trading_days - dte)

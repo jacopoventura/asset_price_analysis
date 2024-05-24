@@ -1,4 +1,5 @@
-# import math
+# Copyright (c) 2024 Jacopo Ventura
+
 import datetime
 
 import numpy as np
@@ -103,8 +104,8 @@ class EsPriceAnalysis:
                                         "Downtrend ES>PP": {}}
 
         self.__time_stats_no_rebound = {"Support": {},
-                                     "Resistance": {},
-                                     "Pivot": {}}
+                                        "Resistance": {},
+                                        "Pivot": {}}
 
         self.__body_stats_no_rebound = {"Support": {},
                                         "Resistance": {},
@@ -210,9 +211,12 @@ class EsPriceAnalysis:
         point_perfect_rebound = [self.__es_price_df.iloc[i][self.__KEY_FIRST_REBOUND] for i in rows_first_rebound] + [self.__es_price_df.iloc[i][self.__KEY_SECOND_REBOUND] for i in rows_second_rebound]
         point_deep_rebound = [self.__es_price_df.iloc[i][self.__KEY_NO_PERFECT_REBOUND] for i in rows_deep_rebound]
         pt_deep_rebound = [self.__es_price_df.iloc[i][self.__KEY_PT_DEEP_REBOUND] for i in rows_deep_rebound]
-        pt_deep_rebound_pivot = [self.__es_price_df.iloc[i][self.__KEY_PT_DEEP_REBOUND] for i in rows_deep_rebound if self.__es_price_df.iloc[i][self.__KEY_NO_PERFECT_REBOUND]=="PP"]
-        pt_deep_rebound_support = [self.__es_price_df.iloc[i][self.__KEY_PT_DEEP_REBOUND] for i in rows_deep_rebound if self.__es_price_df.iloc[i][self.__KEY_NO_PERFECT_REBOUND]=="S"]
-        pt_deep_rebound_resistance = [self.__es_price_df.iloc[i][self.__KEY_PT_DEEP_REBOUND] for i in rows_deep_rebound if self.__es_price_df.iloc[i][self.__KEY_NO_PERFECT_REBOUND]=="R"]
+        pt_deep_rebound_pivot = [self.__es_price_df.iloc[i][self.__KEY_PT_DEEP_REBOUND] for i in rows_deep_rebound if self.__es_price_df.iloc[i][
+            self.__KEY_NO_PERFECT_REBOUND] == "PP"]
+        pt_deep_rebound_support = [self.__es_price_df.iloc[i][self.__KEY_PT_DEEP_REBOUND] for i in rows_deep_rebound if self.__es_price_df.iloc[i][
+            self.__KEY_NO_PERFECT_REBOUND] == "S"]
+        pt_deep_rebound_resistance = [self.__es_price_df.iloc[i][self.__KEY_PT_DEEP_REBOUND] for i in rows_deep_rebound if self.__es_price_df.iloc[
+            i][self.__KEY_NO_PERFECT_REBOUND] == "R"]
         point_no_rebound = [self.__es_price_df.iloc[i][self.__KEY_NO_PERFECT_REBOUND] for i in rows_no_rebound]
         days_with_perfect_rebound = rows_first_rebound
         days_with_deep_rebound = rows_deep_rebound
@@ -272,12 +276,13 @@ class EsPriceAnalysis:
         self.__stats_pivot_points["Pivot"]["pct deep rebound"] = 100. * count_pp_deep_rebound / count_pp_total
         self.__stats_pivot_points["Pivot"]["pct rebound"] = 100. * (count_pp_perfect_rebound + count_pp_deep_rebound) / count_pp_total
         self.__stats_pivot_points["Pivot"]["pct no rebound"] = 100. * count_pp_no_rebound / count_pp_total
-        self.__stats_pivot_points["Pivot"]["pt deep rebound"] = [self.__es_price_df.iloc[i][self.__KEY_PT_DEEP_REBOUND] for i in rows_deep_rebound if self.__es_price_df.iloc[i][self.__KEY_NO_PERFECT_REBOUND]=="PP"]
+        self.__stats_pivot_points["Pivot"]["pt deep rebound"] = [self.__es_price_df.iloc[i][self.__KEY_PT_DEEP_REBOUND] for i in rows_deep_rebound
+                                                                 if self.__es_price_df.iloc[i][self.__KEY_NO_PERFECT_REBOUND] == "PP"]
 
         count_support_perfect_rebound, count_support_deep_rebound, count_support_no_rebound = self.__count_point("S",
-                                                                                                  point_perfect_rebound,
-                                                                                                  point_deep_rebound,
-                                                                                                  point_no_rebound)
+                                                                                                                 point_perfect_rebound,
+                                                                                                                 point_deep_rebound,
+                                                                                                                 point_no_rebound)
         count_support_total = count_support_perfect_rebound + count_support_deep_rebound + count_support_no_rebound
         self.__stats_pivot_points["Support"]["pct support perfect rebound"] = 100. * count_support_perfect_rebound / self.__stats_pivot_points["General"]["count perfect rebound"]
         self.__stats_pivot_points["Support"]["pct support deep rebound"] = 100. * count_support_deep_rebound / self.__stats_pivot_points["General"]["count deep rebound"]
@@ -290,7 +295,8 @@ class EsPriceAnalysis:
                     count_support_perfect_rebound + count_support_deep_rebound) / count_support_total
         self.__stats_pivot_points["Support"]["pct no rebound"] = 100. * count_support_no_rebound / count_support_total
         self.__stats_pivot_points["Support"]["pt deep rebound"] = [self.__es_price_df.iloc[i][self.__KEY_PT_DEEP_REBOUND]
-                                                                 for i in rows_deep_rebound if self.__es_price_df.iloc[i][self.__KEY_NO_PERFECT_REBOUND] == "S"]
+                                                                   for i in rows_deep_rebound if self.__es_price_df.iloc[i][
+                                                                       self.__KEY_NO_PERFECT_REBOUND] == "S"]
 
         count_resistance_perfect_rebound, count_resistance_deep_rebound, count_resistance_no_rebound = self.__count_point("R",
                                                                                                   point_perfect_rebound,
@@ -308,7 +314,8 @@ class EsPriceAnalysis:
                     count_resistance_perfect_rebound + count_resistance_deep_rebound) / count_resistance_total
         self.__stats_pivot_points["Resistance"]["pct no rebound"] = 100. * count_resistance_no_rebound / count_resistance_total
         self.__stats_pivot_points["Resistance"]["pt deep rebound"] = [self.__es_price_df.iloc[i][self.__KEY_PT_DEEP_REBOUND]
-                                                                 for i in rows_deep_rebound if self.__es_price_df.iloc[i][self.__KEY_NO_PERFECT_REBOUND] == "R"]
+                                                                      for i in rows_deep_rebound if self.__es_price_df.iloc[i][
+                                                                          self.__KEY_NO_PERFECT_REBOUND] == "R"]
 
         cdf_deep_rebound = self.__calc_cpf(pt_deep_rebound, int(max(pt_deep_rebound)))
         self.__stats_deep_rebound["General"][" "] = "Demark"
@@ -577,14 +584,13 @@ class EsPriceAnalysis:
             self.__time_stats_no_rebound["Support"]["% " + t.strftime('%H:%M')] = cpf_hour_no_rebound_support["cpf"][i]
             self.__time_stats_no_rebound["Resistance"]["% " + t.strftime('%H:%M')] = cpf_hour_no_rebound_resistance["cpf"][i]
 
-
-        cpf_body_no_rebound_pivot = self.__calc_cpf(no_rebounds_pivot_df[no_rebounds_pivot_df["Body candle"]>0]["Body candle"].values.astype(int),
+        cpf_body_no_rebound_pivot = self.__calc_cpf(no_rebounds_pivot_df[no_rebounds_pivot_df["Body candle"] > 0]["Body candle"].values.astype(int),
                                                                                               int(max(no_rebounds_df["Body "
                                                                                                                                 "candle"].values)), 5)
-        cpf_body_no_rebound_support = self.__calc_cpf(no_rebounds_support_df[no_rebounds_support_df["Body candle"]>0]["Body candle"].values.astype(
+        cpf_body_no_rebound_support = self.__calc_cpf(no_rebounds_support_df[no_rebounds_support_df["Body candle"] > 0]["Body candle"].values.astype(
             int), int(max(no_rebounds_df["Body "
                                                                                                                                        "candle"].values)), 5)
-        cpf_body_no_rebound_resistance = self.__calc_cpf(no_rebounds_resistance_df[no_rebounds_resistance_df["Body candle"]>0]["Body "
+        cpf_body_no_rebound_resistance = self.__calc_cpf(no_rebounds_resistance_df[no_rebounds_resistance_df["Body candle"] > 0]["Body "
                                                                                                                           "candle"].values.astype(int), int(max(no_rebounds_df["Body "
                                                                                                                                              "candle"].values)), 5)
         self.__body_stats_no_rebound["Pivot"][" "] = "pivot"
@@ -764,23 +770,23 @@ class EsPriceAnalysis:
                 deep_type_df.index.name = None
                 fo.write(deep_type_df.to_html().replace('<td>', '<td align="center">'))
 
-                #fo.write('<br/><br/>')
-                #fo.write("<br/>Probability of not bouncing when approaching a Demark point:")
-                #trend_no_rebound_df = pd.DataFrame([self.__stats_no_rebound["Range"]])
-                #trend_no_rebound_df.set_index(" ", inplace=True)
-                #trend_no_rebound_df.index.name = None
-                #fo.write(trend_no_rebound_df.to_html().replace('<td>', '<td align="center">'))
+                # fo.write('<br/><br/>')
+                # fo.write("<br/>Probability of not bouncing when approaching a Demark point:")
+                # trend_no_rebound_df = pd.DataFrame([self.__stats_no_rebound["Range"]])
+                # trend_no_rebound_df.set_index(" ", inplace=True)
+                # trend_no_rebound_df.index.name = None
+                # fo.write(trend_no_rebound_df.to_html().replace('<td>', '<td align="center">'))
 
-                #es_pp_no_rebound_df = pd.DataFrame([self.__stats_no_rebound["ES PP"]])
-                #es_pp_no_rebound_df.set_index(" ", inplace=True)
-                #es_pp_no_rebound_df.index.name = None
-                #fo.write(es_pp_no_rebound_df.to_html().replace('<td>', '<td align="center">'))
+                # es_pp_no_rebound_df = pd.DataFrame([self.__stats_no_rebound["ES PP"]])
+                # es_pp_no_rebound_df.set_index(" ", inplace=True)
+                # es_pp_no_rebound_df.index.name = None
+                # fo.write(es_pp_no_rebound_df.to_html().replace('<td>', '<td align="center">'))
 
-                #point_no_rebound_df = pd.DataFrame([self.__stats_no_rebound["Point"]])
-                #point_no_rebound_df.set_index(" ", inplace=True)
-                #point_no_rebound_df.index.name = None
-                #fo.write(point_no_rebound_df.to_html().replace('<td>', '<td align="center">'))
-                #fo.write("<br/>")
+                # point_no_rebound_df = pd.DataFrame([self.__stats_no_rebound["Point"]])
+                # point_no_rebound_df.set_index(" ", inplace=True)
+                # point_no_rebound_df.index.name = None
+                # fo.write(point_no_rebound_df.to_html().replace('<td>', '<td align="center">'))
+                # fo.write("<br/>")
 
                 # ======================================= Range analysis ======================================
                 fo.write('<br/><br/><br/>')
@@ -845,7 +851,7 @@ class EsPriceAnalysis:
                 no_rebound_time_analysis_df = pd.DataFrame([self.__time_stats_no_rebound["Pivot"],
                                                             self.__time_stats_no_rebound["Support"],
                                                             self.__time_stats_no_rebound["Resistance"]
-                ])
+                                                            ])
                 no_rebound_time_analysis_df.set_index(" ", inplace=True)
                 no_rebound_time_analysis_df.index.name = None
                 fo.write(no_rebound_time_analysis_df.to_html().replace('<td>', '<td align="center">'))
