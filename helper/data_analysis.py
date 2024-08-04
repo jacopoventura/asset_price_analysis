@@ -12,6 +12,8 @@ import sys
 import datetime
 from scipy.stats import t
 
+import streamlit as st
+
 
 class PriceAnalysis:
     """
@@ -21,6 +23,7 @@ class PriceAnalysis:
     def __init__(self, ticker: str,
                  start: datetime,
                  end: datetime,
+                 dte_long: int,
                  path_to_report: str,
                  stats_vix: bool = True,
                  do_plot: bool = False):
@@ -32,6 +35,8 @@ class PriceAnalysis:
         :type start:datetime
         :param end: end date for the price analysis
         :type end: datetime
+        :param dte_long number of trading days of the long option operation
+        :type dte_long: int
         :param path_to_report: path where the report is saved
         :type path_to_report: str
         :param stats_vix: query vix data or not
@@ -50,7 +55,6 @@ class PriceAnalysis:
         self.__WEEK_MAX_CHANGE_PCT = 6
         self.__MONTH_MAX_CHANGE_PCT = 12
         self.__NUMBER_WEEKS_PER_YEAR = 52
-        self.__DTE_LONG = 23
         self.__STEP = 1  # step to calculate the cumulative distribution
         self.__BINS_DAILY_CHANGE = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]
         self.__BINS_VIX = [vix for vix in range(10, 41, 3)]
@@ -63,10 +67,16 @@ class PriceAnalysis:
 
         self.__NO__DATA_INDICATOR = "ND"
 
+        self.__DTE_LONG = dte_long
         self.__ticker = ticker
         self.__date_start = start
         self.__date_end = end
         self.__number_of_days = (end - start).days
+        if self.__number_of_days < np.ceil( (self.__DTE_LONG / 5) * 7):
+            st.error(f'Incorrect input dates. Minimum {self.__DTE_LONG} trading days shall be considered.', icon="🚨")
+            sys.exit(1)
+            st.stop()
+
         self.__number_of_weeks = math.ceil(self.__number_of_days / 7)
         self.__number_of_trading_days = 0
 
@@ -75,7 +85,7 @@ class PriceAnalysis:
             self.__years_analysis = str(int(start.year))
         else:
             self.__years_analysis = str(int(start.year)) + '-' + str(int(end.year))
-        self.__filename = self.__PATH_TO_HTML + self.__ticker \
+        self.FILENAME = self.__PATH_TO_HTML + self.__ticker \
                                               + '_' + self.__date_start.strftime('%d%m%Y') \
                                               + '_to_' \
                                               + self.__date_end.strftime('%d%m%Y') \
@@ -143,7 +153,7 @@ class PriceAnalysis:
                                                                      self.__WEEK_MAX_CHANGE_PCT)
 
         # Step 4: calculate monthly statistics
-        if self.__number_of_days >= self.__DTE_LONG:
+        if self.__number_of_trading_days >= self.__DTE_LONG:
             self.__monthly_dte_change_df = self.__calc_DTE_statistics(self.__DTE_LONG,
                                                                       self.__MONTH_MAX_CHANGE_PCT)
 
@@ -152,7 +162,7 @@ class PriceAnalysis:
 
         # Step 5: make html report
         self.__write_html()
-        print("Report written in: " + self.__filename)
+        print("Report written in: " + self.FILENAME)
 
     def data_sanity_check(self) -> list:
         """
@@ -407,7 +417,7 @@ class PriceAnalysis:
             self.__years_analysis = str(int(start.year))
         else:
             self.__years_analysis = str(int(start.year)) + '-' + str(int(end.year))
-        self.__filename = self.__PATH_TO_HTML + self.__ticker + '_' \
+        self.FILENAME = self.__PATH_TO_HTML + self.__ticker + '_' \
                                               + self.__years_analysis \
                                               + '_update' + self.__date_end.strftime('%d%m%Y') \
                                               + '.html'
@@ -417,19 +427,26 @@ class PriceAnalysis:
         Query data of the ticker for the input timerange from the source database.
         """
 
-        try:
-            try:
-                self.__price_history_df = yf.Ticker(self.__ticker)
-                self.__price_history_df = self.__price_history_df.history(start=self.__date_start,
+        # try:
+            # try:
+        self.__price_history_df = yf.Ticker(self.__ticker)
+        self.__price_history_df = self.__price_history_df.history(start=self.__date_start,
                                                                           end=self.__date_end)
-            except Exception:
-                self.__price_history_df = web.DataReader(self.__ticker,
-                                                         self.__SOURCE,
-                                                         self.__date_start,
-                                                         self.__date_end, 10)
-        except Exception as e:
-            print('Cannot query historical data:', e)
-            sys.exit(1)  # stop the main function with exit code 1
+
+            #except Exception:
+                #self.__price_history_df = web.DataReader(self.__ticker,
+                #                                         self.__SOURCE,
+                #                                         self.__date_start,
+                #                                         self.__date_end, 10)
+
+        if self.__price_history_df.empty:
+            st.error('Could not query price data. Please check that the ticker is correct and run the app again.', icon="🚨")
+            sys.exit(1)
+            st.stop()
+
+        #except ValueError:
+        #    st.error('Cannot query historical data')
+        #    sys.exit(1)  # stop the main function with exit code 1
 
         # Remove hour from index column (date)
         self.__price_history_df["Date"] = [d.date() for d in self.__price_history_df.index.to_list()]
@@ -567,7 +584,7 @@ class PriceAnalysis:
         """
 
         try:
-            with open(os.path.expanduser(self.__filename), 'w') as fo:
+            with open(os.path.expanduser(self.FILENAME), 'w') as fo:
                 fo.write("<html>\n<head>\n<title> \nOutput Data in an HTML file \
                           </title>\n</head> <body><h1><center>" + self.__ticker + "</center></h1>\n</body></html>")
                 fo.write("Statistical analysis " + self.__ticker + " " + self.__years_analysis)
@@ -873,10 +890,26 @@ class PriceAnalysis:
             self.__change_list_monthly_dte_for_plot_df = change_list_df
         change_list = change_list_df["change_list"]
         change_positive, change_negative = self.__calc_distribution(change_list, max_change_pct, self.__STEP)
-        change_positive["Max drawdown [%]"] = np.min(drawdown_dict["positive week"])
-        change_negative["Max drawdown [%]"] = np.min(drawdown_dict["negative week"])
-        change_positive["Max VIX increment [%]"] = np.max(vix_change_dict["positive week"])
-        change_negative["Max VIX increment [%]"] = np.max(vix_change_dict["negative week"])
+        if len(drawdown_dict["positive week"]) > 0:
+            change_positive["Max drawdown [%]"] = np.min(drawdown_dict["positive week"])
+        else:
+            change_positive["Max drawdown [%]"] = np.NAN
+
+        if len(drawdown_dict["negative week"]) > 0:
+            change_negative["Max drawdown [%]"] = np.min(drawdown_dict["negative week"])
+        else:
+            change_negative["Max drawdown [%]"] = np.NAN
+
+        if len(vix_change_dict["positive week"]) > 0:
+            change_positive["Max VIX increment [%]"] = np.max(vix_change_dict["positive week"])
+        else:
+            change_positive["Max VIX increment [%]"] = np.NAN
+
+        if len(vix_change_dict["negative week"]) > 0:
+            change_negative["Max VIX increment [%]"] = np.max(vix_change_dict["negative week"])
+        else:
+            change_negative["Max VIX increment [%]"] = np.NAN
+
         change_positive["Case"] = "Daily to " + str(int(dte)) + "DTE: positive"
         change_negative["Case"] = "Daily to " + str(int(dte)) + "DTE: negative"
         # noinspection PyTypeChecker

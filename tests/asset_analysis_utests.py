@@ -30,7 +30,8 @@ dataset = {
 
 start = datetime.datetime(2022, 1, 1)  # Year, Month, Day
 end = datetime.datetime(2023, 2, 10)  # Year, Month, Day
-spy = PriceAnalysis("SPY", start, end, "/tmp/")
+dte = 23
+spy = PriceAnalysis("SPY", start, end, dte, "/tmp/")
 
 
 # helper
