@@ -2,9 +2,9 @@ datetime
 numpy
 streamlit
 pandas
-yfinance
 math
+scipy
+yfinance
 os
 plotly
 sys
-scipy
