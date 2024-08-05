@@ -2,9 +2,8 @@ datetime
 numpy
 streamlit
 pandas
-python-math
 scipy
-yfinance
+yfinance==0.2.41
 os
 plotly
 sys
