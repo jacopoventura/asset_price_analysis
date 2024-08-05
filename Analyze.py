@@ -4,7 +4,6 @@ import datetime
 import pandas
 from helper.data_analysis import PriceAnalysis
 import streamlit as st
-import streamlit.components.v1 as components
 
 # product-level code: https://www.zenesys.com/blog/python-coding-standards-best-practices
 # structure: https://stackoverflow.com/questions/193161/what-is-the-best-project-structure-for-a-python-application

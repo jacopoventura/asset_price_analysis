@@ -4,4 +4,4 @@ streamlit
 pandas
 scipy
 plotly
-yfinance==0.2.28
+yfinance>=0.2.31b2
