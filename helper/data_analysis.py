@@ -13,6 +13,7 @@ import datetime
 from scipy.stats import t
 
 import streamlit as st
+from st_aggrid import AgGrid
 
 
 class PriceAnalysis:
@@ -104,7 +105,7 @@ class PriceAnalysis:
         self.__weekly_change_friday_to_friday = None
         self.__weekly_change_df = None
         self.__weekly_change_monday_conditional_df = None
-        self.__weekly_dte_change_df = None
+        self.__weekly_short_dte_change_df = None
         self.__monthly_dte_change_df = None
         self.__change_list_monthly_dte_for_plot_df = None
         self.__day_gapup_df = None
@@ -149,8 +150,8 @@ class PriceAnalysis:
         self.__calc_weekly_statistics()
         self.__calc_weekly_conditional_statistics()
         if self.__number_of_days >= self.__WEEK_TRADING_DAYS:
-            self.__weekly_dte_change_df = self.__calc_DTE_statistics(self.__WEEK_TRADING_DAYS,
-                                                                     self.__WEEK_MAX_CHANGE_PCT)
+            self.__weekly_short_dte_change_df = self.__calc_DTE_statistics(self.__WEEK_TRADING_DAYS,
+                                                                           self.__WEEK_MAX_CHANGE_PCT)
 
         # Step 4: calculate monthly statistics
         if self.__number_of_trading_days >= self.__DTE_LONG:
@@ -191,8 +192,8 @@ class PriceAnalysis:
         cumulative_prob_daily_negative_dict["frequency [%]"] = \
             100.0 * len(self.__day_negative_close) / (len(self.__price_history_df) - 1)
 
-        cumulative_prob_daily_positive_dict["Day"] = "positive"
-        cumulative_prob_daily_negative_dict["Day"] = "negative"
+        cumulative_prob_daily_positive_dict["Day"] = "positive day"
+        cumulative_prob_daily_negative_dict["Day"] = "negative day"
 
         # noinspection PyTypeChecker
         self.__daily_change_df = pd.DataFrame.from_dict([cumulative_prob_daily_positive_dict,
@@ -594,29 +595,35 @@ class PriceAnalysis:
                 fo.write("<br/>Number of trading days analyzed: " + str(self.__number_of_trading_days))
                 fo.write("<br/>Documented created on: " + datetime.datetime.today().strftime('%d/%m/%Y'))
                 fo.write('<br/>' + "Tables contain the <u>cumulative probability</u> of change.")
+
                 # ================================= Daily and Weekly STATS ===================================
                 fo.write('<br/><br/>')
                 fo.write("<center><b>Daily and weekly change stats</b></center>")
-                fo.write('<br/>' + '<br/>' + "Daily change (CLOSE with respect to the previous day's CLOSE)")
+                fo.write(
+                    "<br/>The tables in this sections contain the <b>cumulative probability</b> of the change in price up to a certain level (column).")
+                fo.write('<br/>' + '<br/>' + "Daily change (CLOSE with respect to the previous day CLOSE)")
                 fo.write('<br/>')
                 fo.write(self.__daily_change_df.to_html().replace('<td>', '<td align="center">'))
-                fo.write('<br/>' + '<br/>' + "Weekly change (Friday CLOSE with respect to the previous week Friday's CLOSE or Monday's OPEN)")
+                fo.write('<br/>' + '<br/>' + "Weekly change (Friday CLOSE with respect to the previous week Friday CLOSE or Monday OPEN)")
                 fo.write('<br/>')
                 fo.write(self.__weekly_change_df.to_html().replace('<td>', '<td align="center">'))
                 fo.write('<br/>')
                 fo.write(self.__weekly_change_monday_conditional_df.to_html().replace('<td>', '<td align="center">'))
                 fo.write('<br/>')
+
                 # ================================= DTE STATS ===================================
-                fo.write('<br/><br/>')
-                fo.write("<center><b>DTE analysis for sell put debit</b></center>")
-                fo.write('<br/><br/>')
-                if self.__weekly_dte_change_df is not None:
-                    fo.write(self.__weekly_dte_change_df.to_html().replace('<td>', '<td align="center">'))
+                fo.write('<br/>')
+                fo.write("<center><b>Price change analysis with different DTEs</b></center>")
+                fo.write('<br/>')
+                if self.__weekly_short_dte_change_df is not None:
+                    fo.write('<br/>')
+                    fo.write("Short DTE (open the position every day close and close at the DTE closing price)")
+                    fo.write(self.__weekly_short_dte_change_df.to_html().replace('<td>', '<td align="center">'))
 
                 # monthly dte
                 if self.__monthly_dte_change_df is not None:
                     fo.write('<br/>' + '<br/>' + "Change in " + str(self.__MONTH_TRADING_DAYS))
-                    fo.write(" DTE (effective trading days, Daily OPEN)")
+                    fo.write(" DTE (effective trading days, (open the position every day close and close at the DTE closing price)")
                     fo.write("<br>" + str(self.__number_of_trading_days) + " analyzed days (last OPEN ")
                     fo.write(self.__price_history_df["Date"][self.__number_of_trading_days - self.__DTE_LONG].strftime(
                         '%d/%m/%Y') + ")")
@@ -647,11 +654,11 @@ class PriceAnalysis:
                 fo.write('<br/><br/>')
                 gap_up_df = pd.DataFrame([self.__stats_positive_gap[i] for i in self.__stats_positive_gap.keys()])
                 gap_up_df.set_index("gap", inplace=True)
-                gap_up_df.index.name = None
+                # gap_up_df.index.name = None
                 fo.write(gap_up_df.to_html().replace('<td>', '<td align="center">'))
                 fo.write("<b>HOW TO USE THE TABLE:</b>")
                 fo.write("<br/> - row index: range of the opening gap-up")
-                fo.write("<br/> - column: daily change [%] (close with respect to the previous day's close")
+                fo.write("<br/> - column: daily change [%] (close with respect to the previous day's close)")
                 fo.write("<br/> - cell: <u>cumulative probability [%]</u> that the close is <b>lower or equal</b> the change in the column header")
                 fo.write("<br> - USAGE: observe the open gap. Choose the daily sell put strike based on the close pct with the lowest probability.")
 
@@ -660,11 +667,11 @@ class PriceAnalysis:
                 fo.write('<br/><br/>')
                 gap_down_df = pd.DataFrame([self.__stats_negative_gap[i] for i in self.__stats_negative_gap.keys()])
                 gap_down_df.set_index("gap", inplace=True)
-                gap_down_df.index.name = None
+                # gap_down_df.index.name = None
                 fo.write(gap_down_df.to_html().replace('<td>', '<td align="center">'))
                 fo.write("<b>HOW TO USE THE TABLE:</b>")
                 fo.write("<br/> - row index: range of the opening gap-down")
-                fo.write("<br/> - column: daily change [%] (close with respect to the previous day's close")
+                fo.write("<br/> - column: daily change [%] (close with respect to the previous day's close)")
                 fo.write("<br/> - cell: <u>cumulative probability [%]</u> that the close is <b>lower or equal</b> the change in the column header")
                 fo.write("<br> - USAGE: observe the open gap. Choose the daily sell put strike based on the close pct with the lowest probability.")
 
@@ -676,29 +683,146 @@ class PriceAnalysis:
                 negative_day_vix_df = pd.DataFrame([self.__dict_daily_change_vix_bins[i]["cumulative negative"] for i in
                                                     self.__dict_daily_change_vix_bins.keys()])
                 negative_day_vix_df.set_index("VIX", inplace=True)
-                negative_day_vix_df.index.name = None
+                # negative_day_vix_df.index.name = None
                 negative_day_vix_df = negative_day_vix_df.fillna(0)
                 fo.write(negative_day_vix_df.to_html().replace('<td>', '<td align="center">'))
                 fo.write("<b>HOW TO USE THE TABLE:</b>")
                 fo.write("<br/> - row index: range of the VIX")
-                fo.write("<br/> - column: daily change [%] (close with respect to the previous day's close")
+                fo.write("<br/> - column: daily change [%] (close with respect to the previous day's close)")
                 fo.write("<br/> - cell: <u>cumulative probability [%]</u> that the close is <b>lower or equal</b> the change in the column header")
                 fo.write('<br/>')
                 fo.write("<br/><b>Cumulative probability</b> of the <b>daily POSITIVE change</b> according to the <u>vix level</u>:")
                 positive_day_vix_df = pd.DataFrame([self.__dict_daily_change_vix_bins[i]["cumulative positive"] for i in
                                                     self.__dict_daily_change_vix_bins.keys()])
                 positive_day_vix_df.set_index("VIX", inplace=True)
-                positive_day_vix_df.index.name = None
+                # positive_day_vix_df.index.name = None
                 positive_day_vix_df = positive_day_vix_df.fillna(0)
                 fo.write(positive_day_vix_df.to_html().replace('<td>', '<td align="center">'))
                 fo.write("<b>HOW TO USE THE TABLE:</b>")
                 fo.write("<br/> - row index: range of the VIX")
-                fo.write("<br/> - column: daily change [%] (close with respect to the previous day's close")
+                fo.write("<br/> - column: daily change [%] (close with respect to the previous day's close)")
                 fo.write("<br/> - cell: <u>cumulative probability [%]</u> that the close is <b>lower or equal</b> the change in the column header")
 
         except Exception as e:
             print('Cannot create the html file:', e)
             sys.exit(1)  # stop the main function with exit code 1
+
+    def print_in_app(self) -> None:
+        """
+        Print stats in the app.
+        :return: None
+        """
+
+        st.write(" ")
+        st.markdown("<h4 style='text-align: center; color: white;'>Price change cumulative probability</h4>", unsafe_allow_html=True)
+        st.write(f"The tables in this section contain the **cumulative probability** of the change in price up to a certain level (column).")
+
+        # Daily and weekly stats
+        st.write("Daily movements (**close** with respect to previous day **close**)")
+        st.dataframe(self.__daily_change_df.style.format('{:,.1f}'))
+
+        st.write("Weekly movements (**Friday close** with respect to the previous week **Friday close** or **Monday open**)")
+        st.dataframe(self.__weekly_change_df.style.format('{:,.1f}'))
+        st.dataframe(self.__weekly_change_monday_conditional_df.style.format('{:,.1f}'))
+
+        if self.__weekly_short_dte_change_df is not None:
+            st.write("Short DTE movements (open the position at every day close and close at the DTE closing price).")
+            st.dataframe(self.__weekly_short_dte_change_df.style.format('{:,.1f}'))
+
+        # Monthly (dte-based) stats
+        if self.__monthly_dte_change_df is not None:
+            st.write("Long DTE movements: price change (close to close) in " + str(self.__MONTH_TRADING_DAYS) + " trading days. " +
+                     str(self.__number_of_trading_days) + " analyzed days. Last: " + self.__price_history_df["Date"][
+                         self.__number_of_trading_days - self.__DTE_LONG].strftime(
+                        '%d/%m/%Y') + ". Open the position at every day close and close at the DTE closing price.")
+
+            st.dataframe(self.__monthly_dte_change_df.style.format('{:,.1f}'))
+
+        # Gap up / down analysis
+        st.write(" ")
+        st.write(" ")
+        st.write(" ")
+        st.markdown("<h4 style='text-align: center; color: white;'>Gap UP / DOWN analysis </h4>", unsafe_allow_html=True)
+        st.write(f"The tables in this section contain the **cumulative probability** of the change in price up to a certain level (column), "
+                 f"for a given open gap (market open).")
+
+        st.write(" ")
+        st.write("Positive market open (gap up)")
+        # check if ND (str) are present when no data are available and change to NAN
+        for key in self.__stats_positive_gap.keys():
+            col = self.__stats_positive_gap[key]
+            for k in col.keys():
+                if k != 'gap' and isinstance(col[k], str):
+                    self.__stats_positive_gap[key][k] = np.NAN
+        gap_up_df = pd.DataFrame([self.__stats_positive_gap[i] for i in self.__stats_positive_gap.keys()])
+        gap_up_df.set_index("gap", inplace=True)
+        gap_up_df.fillna(0)
+        st.dataframe(gap_up_df.style.format('{:,.1f}'))
+        st.write("HOW TO USE THE TABLE:")
+        st.write("- row index: range of the opening gap-up")
+        st.write("- column: daily change [%] (close with respect to the previous day's close)")
+        st.write("- cell: cumulative probability [%] that the close is lower or equal the change in the column header")
+        st.write(f"- **usage**: observe the open gap. Choose the daily sell put strike based on the close pct with the lowest probability.")
+
+        # check if ND (str) are present when no data are available and change to NAN
+        st.write(" ")
+        st.write(" ")
+        st.write(" ")
+        st.write("Negative market open (gap down)")
+        for key in self.__stats_negative_gap.keys():
+            col = self.__stats_negative_gap[key]
+            for k in col.keys():
+                if k != 'gap' and isinstance(col[k], str):
+                    self.__stats_negative_gap[key][k] = np.NAN
+        gap_down_df = pd.DataFrame([self.__stats_negative_gap[i] for i in self.__stats_negative_gap.keys()])
+        gap_down_df.set_index("gap", inplace=True)
+        gap_down_df.fillna(0)
+        st.dataframe(gap_down_df.style.format('{:,.1f}'))
+        st.write("HOW TO USE THE TABLE:")
+        st.write("- row index: range of the opening gap-down")
+        st.write("- column: daily change [%] (close with respect to the previous day's close")
+        st.write("- cell: cumulative probability [%] that the close is lower or equal the change in the column header")
+        st.write(f"- **usage**: observe the open gap. Choose the daily sell put strike based on the close pct with the lowest probability.")
+
+        # VIX stats
+        st.write(" ")
+        st.write(" ")
+        st.write(" ")
+        st.markdown("<h4 style='text-align: center; color: white;'>Daily price change given the VIX</h4>", unsafe_allow_html=True)
+        st.write(f"The tables in this section contain the **cumulative probability** of the change in price up to a certain level (column), "
+                 f"given a certain VIX level.")
+
+        st.write(" ")
+        st.write("Daily NEGATIVE change given the vix level:")
+
+        # check if ND (str) are present when no data are available and change to NAN
+        for key in self.__dict_daily_change_vix_bins.keys():
+            col = self.__dict_daily_change_vix_bins[key]
+            for k in col.keys():
+                if isinstance(col[k], str):
+                    self.__dict_daily_change_vix_bins[key][k] = np.NAN
+        negative_day_vix_df = pd.DataFrame([self.__dict_daily_change_vix_bins[i]["cumulative negative"] for i in
+                                            self.__dict_daily_change_vix_bins.keys()])
+        negative_day_vix_df.set_index("VIX", inplace=True)
+        negative_day_vix_df = negative_day_vix_df.fillna(0)
+        st.dataframe(negative_day_vix_df.style.format('{:,.1f}'))
+        st.write("HOW TO USE THE TABLE:")
+        st.write("- row index: range of the VIX")
+        st.write("- column: daily change [%] (close with respect to the previous day's close")
+        st.write("- cell: **cumulative probability [%]** that the close is **lower or equal** the change in the column header")
+
+        st.write(" ")
+        st.write(" ")
+        st.write("Daily POSITIVE change according to the vix level:")
+        positive_day_vix_df = pd.DataFrame([self.__dict_daily_change_vix_bins[i]["cumulative positive"] for i in
+                                            self.__dict_daily_change_vix_bins.keys()])
+        positive_day_vix_df.set_index("VIX", inplace=True)
+        positive_day_vix_df = positive_day_vix_df.fillna(0)
+        st.dataframe(positive_day_vix_df.style.format('{:,.1f}'))
+        st.write("HOW TO USE THE TABLE:")
+        st.write("- row index: range of the VIX")
+        st.write("- column: daily change [%] (close with respect to the previous day's close)")
+        st.write("- cell: **cumulative probability [%]** that the close is **lower or equal** the change in the column header")
 
     def __make_plot_weekly_change(self) -> go.Figure:
         """
@@ -910,8 +1034,8 @@ class PriceAnalysis:
         else:
             change_negative["Max VIX increment [%]"] = np.NAN
 
-        change_positive["Case"] = "Daily to " + str(int(dte)) + "DTE: positive"
-        change_negative["Case"] = "Daily to " + str(int(dte)) + "DTE: negative"
+        change_positive["Case"] = str(int(dte)) + "DTE: positive"
+        change_negative["Case"] = str(int(dte)) + "DTE: negative"
         # noinspection PyTypeChecker
         change_df = pd.DataFrame.from_dict([change_positive, change_negative])
         change_df.set_index("Case", inplace=True)

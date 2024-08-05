@@ -21,8 +21,10 @@ path_to_html = "./"
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
 
+    st.set_page_config(layout="wide")
+
     # App title
-    st.title("Price movement analysis")
+    st.markdown("<h1 style='text-align: center; color: white;'>Price movement analysis</h1>", unsafe_allow_html=True)
 
     # App description
 
@@ -51,10 +53,12 @@ if __name__ == '__main__':
         )
 
     # Show table in the app
+    st.markdown("<h2 style='text-align: center; color: white;'>Analysis</h2>", unsafe_allow_html=True)
+
     show_analysis = st.checkbox("Show analysis", value=False)
 
     if show_analysis:
-        st.write("Great!")
+        ticker_analysis.print_in_app()
 
 
 
