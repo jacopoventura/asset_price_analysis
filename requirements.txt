@@ -4,7 +4,7 @@ streamlit
 pandas
 math
 scipy
-yfinance
+yfinance==0.2.38
 os
 plotly
 sys
