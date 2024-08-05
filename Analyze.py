@@ -4,7 +4,6 @@ import datetime
 import pandas
 from helper.data_analysis import PriceAnalysis
 import streamlit as st
-import appdirs as ad
 import streamlit.components.v1 as components
 
 # product-level code: https://www.zenesys.com/blog/python-coding-standards-best-practices
@@ -23,8 +22,6 @@ path_to_html = "./"
 if __name__ == '__main__':
 
     st.set_page_config(layout="wide")
-
-    ad.user_cache_dir = lambda *args: "/tmp"
 
     # App title
     st.markdown("<h1 style='text-align: center; color: white;'>Price movement analysis</h1>", unsafe_allow_html=True)
