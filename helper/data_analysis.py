@@ -1,18 +1,5 @@
 # Copyright (c) 2024 Jacopo Ventura
 
-from pathlib import Path
-
-import appdirs as ad
-
-CACHE_DIR = ".cache"
-
-# Force appdirs to say that the cache dir is .cache
-ad.user_cache_dir = lambda *args: CACHE_DIR
-
-# Create the cache dir if it doesn't exist
-Path(CACHE_DIR).mkdir(exist_ok=True)
-
-
 import yfinance as yf
 import math
 import numpy as np
