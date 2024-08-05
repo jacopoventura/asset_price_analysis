@@ -4,4 +4,5 @@ streamlit
 pandas
 scipy
 plotly
+appdirs
 yfinance>=0.2.31b2
