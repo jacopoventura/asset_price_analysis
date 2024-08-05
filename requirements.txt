@@ -3,7 +3,6 @@ numpy
 streamlit
 pandas
 scipy
-yfinance==0.2.41
 os
 plotly
 sys
