@@ -5,7 +5,7 @@ import math
 import numpy as np
 import os
 import pandas as pd
-import pandas_datareader.data as web
+# import pandas_datareader.data as web
 import plotly.graph_objects as go
 import sys
 
@@ -13,7 +13,6 @@ import datetime
 from scipy.stats import t
 
 import streamlit as st
-from st_aggrid import AgGrid
 
 
 class PriceAnalysis:

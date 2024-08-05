@@ -1,0 +1,10 @@
+datetime
+numpy
+streamlit
+pandas
+yfinance
+math
+os
+plotly
+sys
+scipy
