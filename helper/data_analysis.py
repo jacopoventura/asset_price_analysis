@@ -764,7 +764,7 @@ class PriceAnalysis:
             col = self.__stats_positive_gap[key]
             for k in col.keys():
                 if k != 'gap' and isinstance(col[k], str):
-                    self.__stats_positive_gap[key][k] = np.NAN
+                    self.__stats_positive_gap[key][k] = 0
         gap_up_df = pd.DataFrame([self.__stats_positive_gap[i] for i in self.__stats_positive_gap.keys()])
         gap_up_df.set_index("gap", inplace=True)
         gap_up_df.fillna(0)
@@ -784,7 +784,7 @@ class PriceAnalysis:
             col = self.__stats_negative_gap[key]
             for k in col.keys():
                 if k != 'gap' and isinstance(col[k], str):
-                    self.__stats_negative_gap[key][k] = np.NAN
+                    self.__stats_negative_gap[key][k] = 0
         gap_down_df = pd.DataFrame([self.__stats_negative_gap[i] for i in self.__stats_negative_gap.keys()])
         gap_down_df.set_index("gap", inplace=True)
         gap_down_df.fillna(0)
@@ -811,7 +811,7 @@ class PriceAnalysis:
             col = self.__dict_daily_change_vix_bins[key]
             for k in col.keys():
                 if isinstance(col[k], str):
-                    self.__dict_daily_change_vix_bins[key][k] = np.NAN
+                    self.__dict_daily_change_vix_bins[key][k] = 0
         negative_day_vix_df = pd.DataFrame([self.__dict_daily_change_vix_bins[i]["cumulative negative"] for i in
                                             self.__dict_daily_change_vix_bins.keys()])
         negative_day_vix_df.set_index("VIX", inplace=True)
@@ -1028,22 +1028,22 @@ class PriceAnalysis:
         if len(drawdown_dict["positive week"]) > 0:
             change_positive["Max drawdown [%]"] = np.min(drawdown_dict["positive week"])
         else:
-            change_positive["Max drawdown [%]"] = np.NAN
+            change_positive["Max drawdown [%]"] = 0
 
         if len(drawdown_dict["negative week"]) > 0:
             change_negative["Max drawdown [%]"] = np.min(drawdown_dict["negative week"])
         else:
-            change_negative["Max drawdown [%]"] = np.NAN
+            change_negative["Max drawdown [%]"] = 0
 
         if len(vix_change_dict["positive week"]) > 0:
             change_positive["Max VIX increment [%]"] = np.max(vix_change_dict["positive week"])
         else:
-            change_positive["Max VIX increment [%]"] = np.NAN
+            change_positive["Max VIX increment [%]"] = 0
 
         if len(vix_change_dict["negative week"]) > 0:
             change_negative["Max VIX increment [%]"] = np.max(vix_change_dict["negative week"])
         else:
-            change_negative["Max VIX increment [%]"] = np.NAN
+            change_negative["Max VIX increment [%]"] = 0
 
         change_positive["Case"] = str(int(dte)) + "DTE: positive"
         change_negative["Case"] = str(int(dte)) + "DTE: negative"
