@@ -23,8 +23,8 @@ if __name__ == '__main__':
     st.set_page_config(layout="wide")
 
     # App title
-    st.markdown("<h1 style='text-align: center; color: white;'>Price movement analysis</h1>", unsafe_allow_html=True)
-    st.markdown("<h4 style='text-align: center; color: white;'>for option trading</h4>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center; '>Price movement analysis</h1>", unsafe_allow_html=True)
+    st.markdown("<h4 style='text-align: center; '>for option trading</h4>", unsafe_allow_html=True)
 
     # App description
 
