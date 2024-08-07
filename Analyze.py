@@ -17,11 +17,7 @@ PATH_TO_REPORT = '~/Desktop/projects/Trading/'
 
 path_to_html = "./"
 
-hide_footer_style = """
-    <style>
-    .reportview-container .main footer {visibility: hidden;}    
-    """
-st.markdown(hide_footer_style, unsafe_allow_html=True)
+
 
 # Your app code goes here
 
