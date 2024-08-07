@@ -16,15 +16,6 @@ pandas.options.display.float_format = '{:,.1f}'.format
 PATH_TO_REPORT = '~/Desktop/projects/Trading/'
 
 path_to_html = "./"
-hide_footer_style = """
-    <style>
-    .reportview-container .main footer {visibility: hidden;}    
-    """
-st.markdown(hide_footer_style, unsafe_allow_html=True)
-
-
-
-# Your app code goes here
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
