@@ -1,6 +1,6 @@
 import streamlit as st
 
-st.markdown(f"Copyright (c) 2024 Jacopo Ventura
+st.markdown("Copyright (c) 2024 Jacopo Ventura
 
 Distribution not allowed. 
 For private use, please contact the author at jacopo.ventura.87@gmail.com
