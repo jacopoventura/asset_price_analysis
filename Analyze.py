@@ -53,7 +53,7 @@ if __name__ == '__main__':
         )
 
     # Show table in the app
-    st.markdown("<h2 style='text-align: center; color: white;'>Analysis</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; '>Analysis</h2>", unsafe_allow_html=True)
 
     show_analysis = st.checkbox("Show analysis", value=False)
 
