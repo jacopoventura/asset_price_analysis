@@ -24,7 +24,7 @@ if __name__ == '__main__':
 
     # App title
     st.markdown("<h1 style='text-align: center; color: white;'>Price movement analysis</h1>", unsafe_allow_html=True)
-    st.markdown("<h5 style='text-align: center; color: white;'>- for option trading -</h5>", unsafe_allow_html=True)
+    st.markdown("<h4 style='text-align: center; color: white;'>for option trading</h4>", unsafe_allow_html=True)
 
     # App description
 
