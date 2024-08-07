@@ -4,7 +4,7 @@ st.markdown('Copyright (c) Jacopo Ventura, 2024. Distribution not allowed.', uns
 
 st.markdown('<h2 style="text-align: center;">About this app</h2>', unsafe_allow_html=True)
 
-st.markdown('This application analyzes the price movement of assets in a specific time window. The output is a detailed report of the probabilities of the price movement up to numerous price change levels.', unsafe_allow_html=True)
+st.markdown('<div style="text-align: right"> This application analyzes the price movement of assets in a specific time window. The output is a detailed report of the probabilities of the price movement up to numerous price change levels. </div>', unsafe_allow_html=True)
 
 st.markdown('<h3 style="text-align: center;">Problem</h3>', unsafe_allow_html=True)
 st.markdown('When trading with options, the greek *delta* provides an empirical estimate of the trade success probaiblity. ', unsafe_allow_html=True)
