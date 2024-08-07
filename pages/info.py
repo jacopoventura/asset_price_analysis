@@ -1,6 +1,6 @@
 import streamlit as st
 
-st.write(f"Copyright (c) 2024 Jacopo Ventura
+st.markdown(f"Copyright (c) 2024 Jacopo Ventura
 
 Distribution not allowed. 
 For private use, please contact the author at jacopo.ventura.87@gmail.com
@@ -26,4 +26,5 @@ The price movement is also analyzed for gap up / down scenarios and as function 
 
 ### Practical usage example
 
-This app was develped to help the trader to choose the strikes for a speculative sell put debit (bear put + sell put). At option expiration, the maximum profit happens if the price is below the strikes of the bear put and above the strike of the sell put. If, for example, the operation DTE (Days To Expiration) are 23 (1 month), the app provides the probability of the price drop up to several levels. Like in the 2022 bear market, the SPY never dropped more that 11% in a month. Thus by selecting a sell put strike 12% below the current price, the operation should end in profite with high probability, even in bear market conditions.")
+This app was develped to help the trader to choose the strikes for a speculative sell put debit (bear put + sell put). At option expiration, the maximum profit happens if the price is below the strikes of the bear put and above the strike of the sell put. If, for example, the operation DTE (Days To Expiration) are 23 (1 month), the app provides the probability of the price drop up to several levels. Like in the 2022 bear market, the SPY never dropped more that 11% in a month. Thus by selecting a sell put strike 12% below the current price, the operation should end in profite with high probability, even in bear market conditions.
+")
