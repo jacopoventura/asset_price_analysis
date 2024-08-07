@@ -1,3 +1,3 @@
 import streamlit as st
 
-st.write(f"For suggestions, requests and collaborations write to: *traderjacopo@gmail.com*")
+st.sidebar.markdown('For suggestions, requests and collaborations write to: <a href="mailto:hello@streamlit.io">jacopo.ventura.87@gmail.com</a>', unsafe_allow_html=True)
