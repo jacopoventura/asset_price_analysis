@@ -725,7 +725,7 @@ class PriceAnalysis:
         """
 
         st.write(" ")
-        st.markdown("<h4 style='text-align: center; color: white;'>Price change cumulative probability</h4>", unsafe_allow_html=True)
+        st.markdown("<h4 style='text-align: center; '>Price change cumulative probability</h4>", unsafe_allow_html=True)
         st.write(f"The tables in this section contain the **cumulative probability** of the change in price up to a certain level (column).")
 
         # Daily and weekly stats
@@ -753,7 +753,7 @@ class PriceAnalysis:
         st.write(" ")
         st.write(" ")
         st.write(" ")
-        st.markdown("<h4 style='text-align: center; color: white;'>Gap UP / DOWN analysis </h4>", unsafe_allow_html=True)
+        st.markdown("<h4 style='text-align: center; '>Gap UP / DOWN analysis </h4>", unsafe_allow_html=True)
         st.write(f"The tables in this section contain the **cumulative probability** of the change in price up to a certain level (column), "
                  f"for a given open gap (market open).")
 
@@ -799,7 +799,7 @@ class PriceAnalysis:
         st.write(" ")
         st.write(" ")
         st.write(" ")
-        st.markdown("<h4 style='text-align: center; color: white;'>Daily price change given the VIX</h4>", unsafe_allow_html=True)
+        st.markdown("<h4 style='text-align: center; '>Daily price change given the VIX</h4>", unsafe_allow_html=True)
         st.write(f"The tables in this section contain the **cumulative probability** of the change in price up to a certain level (column), "
                  f"given a certain VIX level.")
 
