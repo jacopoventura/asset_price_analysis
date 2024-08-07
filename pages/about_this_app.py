@@ -21,4 +21,4 @@ st.markdown('<div style="text-align: justify">This app was develped to help the 
 st.markdown('<div> </div> ', unsafe_allow_html=True)
 st.markdown('<div> </div> ', unsafe_allow_html=True)
 st.markdown('<h2 style="text-align: center;">Copyright</h2>', unsafe_allow_html=True)
-st.markdown('<div style="text-align: justify">Copyright (c) Jacopo Ventura, 2024. Distribution not allowed.</div>', unsafe_allow_html=True)
+st.markdown('<div style="text-align: center">Copyright (c) Jacopo Ventura, 2024. Distribution not allowed.</div>', unsafe_allow_html=True)
