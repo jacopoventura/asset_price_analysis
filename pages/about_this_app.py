@@ -13,7 +13,6 @@ st.markdown('<div style="text-align: justify">This is possible by knowing the pr
 
 st.markdown('<h3 style="text-align: center;">Solution</h3>', unsafe_allow_html=True)
 
-st.markdown('<div style="text-align: justify">Given an input ticker and a selected time window, the app analyses the price movements for different durations (daily, weekly, monthly) and calculates the probability of the price change up to a certain price change level.
-The price movement is also analyzed for gap up / down scenarios and as function of the VIX level as well.</div>', unsafe_allow_html=True)
+st.markdown('<div style="text-align: justify">Given an input ticker and a selected time window, the app analyses the price movements for different durations (daily, weekly, monthly) and calculates the probability of the price change up to a certain price change level. The price movement is also analyzed for gap up / down scenarios and as function of the VIX level as well.</div>', unsafe_allow_html=True)
 
 st.markdown('<h3 style="text-align: center;">Example of usage</h3>', unsafe_allow_html=True)
