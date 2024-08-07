@@ -14,4 +14,4 @@ Given an input ticker and a selected time window, the app analyses the price mov
 The price movement is also analyzed for gap up / down scenarios and as function of the VIX level as well.
 Practical usage example
 This app was develped to help the trader to choose the strikes for a speculative sell put debit (bear put + sell put). At option expiration, the maximum profit happens if the price is below the strikes of the bear put and above the strike of the sell put. If, for example, the operation DTE (Days To Expiration) are 23 (1 month), the app provides the probability of the price drop up to several levels. Like in the 2022 bear market, the SPY never dropped more that 11% in a month. Thus by selecting a sell put strike 12% below the current price, the operation should end in profite with high probability, even in bear market conditions.
-')
+', unsafe_allow_html=True)
