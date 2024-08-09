@@ -4,6 +4,7 @@ import datetime
 import pandas
 from helper.data_analysis import PriceAnalysis
 import streamlit as st
+import streamlit_analytics
 
 # product-level code: https://www.zenesys.com/blog/python-coding-standards-best-practices
 # structure: https://stackoverflow.com/questions/193161/what-is-the-best-project-structure-for-a-python-application
@@ -80,3 +81,7 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
+with streamlit_analytics.track():
+    st.text_input("Write something")
+    st.button("Click me")

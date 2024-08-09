@@ -1,6 +1,7 @@
 datetime
 numpy
 streamlit
+streamlit-analytics
 pandas
 scipy
 plotly
