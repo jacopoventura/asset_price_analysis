@@ -43,7 +43,7 @@ if __name__ == '__main__':
     ticker_analysis = PriceAnalysis(ticker, date_start, date_end, dte_long, path_to_html)
     ticker_analysis.run()
 
-    st.success('This is a success message!', icon="✅")
+    st.success('Analysis successful!', icon="✅")
 
     # Download generated report
     with open(ticker_analysis.FILENAME, 'rb') as f:
