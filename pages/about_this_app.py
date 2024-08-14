@@ -8,7 +8,7 @@ st.markdown('<div style="text-align: justify">This application analyzes the pric
 
 st.markdown('<div> </div> ', unsafe_allow_html=True)
 st.markdown('<h3 style="text-align: center;">Problem</h3>', unsafe_allow_html=True)
-st.markdown('<div style="text-align: justify">When trading with options, the greek <i>delta</> provides an empirical estimate of the trade success '
+st.markdown('<div style="text-align: justify">When trading with options, the greek <i>delta</i> provides an empirical estimate of the trade success '
             'probability.</div>', unsafe_allow_html=True)
 st.markdown('<div style="text-align: justify">However, unexpected volatility can occur just right after the trade open, '
             'with the underlying price going in the opposite trade direction. When this happens, '
@@ -29,7 +29,8 @@ st.markdown('<div> </div> ', unsafe_allow_html=True)
 st.markdown('<h3 style="text-align: center;">Example of usage</h3>', unsafe_allow_html=True)
 st.markdown('<div style="text-align: justify">This app was developed to help the trader to choose the strikes for a speculative sell put debit ('
             'bear put + sell put). '
-            'At option expiration, the maximum profit happens if the price is below the strikes of the bear put and above the strike of the sell put. '
+            'At option expiration, '
+            'the maximum profit happens if the price is below the strikes of the bear put and above the strike of the sell put. '
             'If, for example, the operation DTE (Days To Expiration) are 23 (1 month), '
             'the app provides the probability of the price drop up to several levels. '
             'Like in the 2022 bear market, the SPY never dropped more that 11% in a month. '
