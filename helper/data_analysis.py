@@ -163,7 +163,7 @@ class PriceAnalysis:
         # Step 3: calculate weekly statistics
         self.__calc_weekly_statistics()
         self.__calc_weekly_conditional_statistics()
-        if self.__number_of_days >= self.__WEEK_TRADING_DAYS:
+        if self.__number_of_trading_days >= self.__WEEK_TRADING_DAYS:
             self.__weekly_short_dte_change_df = self.__calc_DTE_statistics(self.__WEEK_TRADING_DAYS,
                                                                            self.__WEEK_MAX_CHANGE_PCT)
 
@@ -187,9 +187,9 @@ class PriceAnalysis:
         """
         COLUMNS_TO_CHECK = ["Date", "Week number", "Year", "Open", "Close"]
         for key in COLUMNS_TO_CHECK:
-            if self.__price_history_df[key].isnull().values.any():
-                idx_nan = np.argwhere(np.isnan(self.__price_history_df[key].values))
-                return self.__price_history_df[key].iloc(idx_nan).values
+            mask_nan = self.__price_history_df[key].isna()
+            if mask_nan.any():
+                return self.__price_history_df.loc[mask_nan, "Date"].tolist()
         return []
 
     def __calc_daily_statistics(self):
@@ -236,32 +236,31 @@ class PriceAnalysis:
             else:
                 negative_open.append(gap)
                 close_negative_open.append(daily_close_pct[i])
-        min_close_positive_open = np.min(close_positive_open)
-        max_close_positive_open = np.max(close_positive_open)
-        min_close_negative_open = np.min(close_negative_open)
-        max_close_negative_open = np.max(close_negative_open)
 
-        x_cpf_positive_open = []
-        x = int(min_close_positive_open*self.__BIN_CLOSE_PCT)/self.__BIN_CLOSE_PCT+self.__BIN_CLOSE_PCT
-        while x < max_close_positive_open:
-            x_cpf_positive_open.append(x)
-            x += self.__BIN_CLOSE_PCT
-        if len(x_cpf_positive_open) > 0:
-            if x_cpf_positive_open[-1] < max_close_positive_open:
+        # Build close-change bins robustly for one-sided datasets.
+        x_cpf_positive_open = [0.0]
+        if close_positive_open:
+            min_close_positive_open = float(np.min(close_positive_open))
+            max_close_positive_open = float(np.max(close_positive_open))
+            x_cpf_positive_open = []
+            x = math.floor(min_close_positive_open * self.__BIN_CLOSE_PCT) / self.__BIN_CLOSE_PCT + self.__BIN_CLOSE_PCT
+            while x < max_close_positive_open:
+                x_cpf_positive_open.append(x)
+                x += self.__BIN_CLOSE_PCT
+            if len(x_cpf_positive_open) == 0 or x_cpf_positive_open[-1] != max_close_positive_open:
                 x_cpf_positive_open.append(max_close_positive_open)
-            elif x_cpf_positive_open[-1] > max_close_positive_open:
-                x_cpf_positive_open = max_close_positive_open
 
-        x_cpf_negative_open = []
-        x = int(max_close_negative_open*self.__BIN_CLOSE_PCT)/self.__BIN_CLOSE_PCT - self.__BIN_CLOSE_PCT
-        while x > min_close_negative_open:
-            x_cpf_negative_open.append(x)
-            x -= self.__BIN_CLOSE_PCT
-        if len(x_cpf_negative_open) > 0:
-            if x_cpf_negative_open[-1] > min_close_negative_open:
+        x_cpf_negative_open = [0.0]
+        if close_negative_open:
+            min_close_negative_open = float(np.min(close_negative_open))
+            max_close_negative_open = float(np.max(close_negative_open))
+            x_cpf_negative_open = []
+            x = math.ceil(max_close_negative_open * self.__BIN_CLOSE_PCT) / self.__BIN_CLOSE_PCT - self.__BIN_CLOSE_PCT
+            while x > min_close_negative_open:
+                x_cpf_negative_open.append(x)
+                x -= self.__BIN_CLOSE_PCT
+            if len(x_cpf_negative_open) == 0 or x_cpf_negative_open[-1] != min_close_negative_open:
                 x_cpf_negative_open.append(min_close_negative_open)
-            elif x_cpf_negative_open[-1] > min_close_negative_open:
-                x_cpf_negative_open = min_close_negative_open
 
         gap_positive_list = []
         gap_negative_list = []
@@ -486,7 +485,7 @@ class PriceAnalysis:
         try:
             # vix_history_df = yf.download('^VIX', start = self.__date_start_vix, end=self.__date_end)
             vix_history_df = yf.Ticker("^VIX")
-            vix_history_df = vix_history_df.history(start=self.__date_start, end=self.__date_end)
+            vix_history_df = vix_history_df.history(start=self.__date_start_vix, end=self.__date_end)
 
         except Exception as e:
             print('WARNING: cannot query historical data of VIX. VIX stats set to 0:', e)
@@ -1021,13 +1020,27 @@ class PriceAnalysis:
             mean = float(data[0])
             return [mean, 0.0, mean, mean]
 
+        data_array = np.asarray(data, dtype=float)
+        mean, standard_deviation = np.mean(data_array), np.std(data_array)
+
+        # Newey-West (HAC) standard error for mean to reduce overconfidence
+        # when samples are autocorrelated (e.g., overlapping DTE windows).
+        demeaned = data_array - mean
+        lag = max(1, int(np.sqrt(n)))
+        gamma_0 = float(np.dot(demeaned, demeaned) / n)
+        variance_hac = gamma_0
+        for lag_i in range(1, lag + 1):
+            gamma_i = float(np.dot(demeaned[lag_i:], demeaned[:-lag_i]) / n)
+            weight = 1.0 - lag_i / (lag + 1.0)
+            variance_hac += 2.0 * weight * gamma_i
+        standard_error = np.sqrt(max(variance_hac, 0.0) / n)
+
         dof = n - 1
-        mean, standard_deviation = np.mean(data), np.std(data)
         t_crit = np.abs(t.ppf((1 - confidence) / 2., dof))
         return [mean,
                 standard_deviation,
-                mean - standard_deviation*t_crit/np.sqrt(n),
-                mean + standard_deviation*t_crit/np.sqrt(n)]
+                mean - standard_error * t_crit,
+                mean + standard_error * t_crit]
 
     def __calc_DTE_statistics(self, dte: int, max_change_pct: float) -> pd.DataFrame:
         """

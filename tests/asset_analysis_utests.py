@@ -79,7 +79,7 @@ def build_monotonic_bull_history_df(periods: int = 40) -> pd.DataFrame:
         {
             "Date": dates_desc,
             "Week number": [pd.Timestamp(day).isocalendar().week for day in dates_desc],
-            "Year": [day.year for day in dates_desc],
+            "Year": [pd.Timestamp(day).isocalendar().year for day in dates_desc],
             "Open": open_desc,
             "Close": close_desc,
             "Low": low_desc,
@@ -180,6 +180,14 @@ class TestCumulativeProbability(unittest.TestCase):
         stats = spy._PriceAnalysis__mean_confidence_interval([2.5])
         self.assertEqual([2.5, 0.0, 2.5, 2.5], stats)
 
+    def test_mean_confidence_interval_autocorrelated_series_is_finite(self):
+        stats = spy._PriceAnalysis__mean_confidence_interval([1.0, 1.2, 1.1, 1.3, 1.25, 1.35, 1.3, 1.4])
+        self.assertEqual(4, len(stats))
+        for value in stats:
+            self.assertTrue(float(value) == float(value))  # not NaN
+        self.assertLessEqual(stats[2], stats[0])
+        self.assertGreaterEqual(stats[3], stats[0])
+
     def test_gapdown_beyond_max_gap_bucket_uses_negative_threshold(self):
         analysis = PriceAnalysis("SPY", start, end, dte, "/tmp/")
         analysis._PriceAnalysis__price_history_df = pd.DataFrame(
@@ -204,6 +212,39 @@ class TestCumulativeProbability(unittest.TestCase):
                 beyond_bucket[key],
                 msg=f"Expected no data for {key}, got {beyond_bucket[key]!r}",
             )
+
+    def test_gap_stats_handles_one_sided_opening_data(self):
+        analysis = PriceAnalysis("SPY", start, end, dte, "/tmp/")
+        analysis._PriceAnalysis__price_history_df = pd.DataFrame(
+            {
+                "Open wrt close": [0.4, 0.8, 1.2, 2.0],
+                "Close wrt close": [0.2, -0.3, 0.4, -0.1],
+            }
+        )
+
+        analysis._PriceAnalysis__calc_stats_gapup_down()
+
+        self.assertGreater(len(analysis._PriceAnalysis__stats_positive_gap), 0)
+        self.assertGreater(len(analysis._PriceAnalysis__stats_negative_gap), 0)
+        sample_negative_row = next(iter(analysis._PriceAnalysis__stats_negative_gap.values()))
+        sample_positive_row = next(iter(analysis._PriceAnalysis__stats_positive_gap.values()))
+        self.assertGreater(len([k for k in sample_negative_row if k != "gap"]), 0)
+        self.assertGreater(len([k for k in sample_positive_row if k != "gap"]), 0)
+
+    def test_data_sanity_check_handles_nan_on_date_column(self):
+        analysis = PriceAnalysis("SPY", start, end, dte, "/tmp/")
+        analysis._PriceAnalysis__price_history_df = pd.DataFrame(
+            {
+                "Date": [datetime.date(2024, 1, 5), None],
+                "Week number": [1, 1],
+                "Year": [2024, 2024],
+                "Open": [100.0, 100.0],
+                "Close": [101.0, 101.0],
+            }
+        )
+
+        nan_dates = analysis.data_sanity_check()
+        self.assertEqual(1, len(nan_dates))
 
 
 class TestPriceAnalysisIntegration(unittest.TestCase):
@@ -277,6 +318,48 @@ class TestPriceAnalysisIntegration(unittest.TestCase):
             analysis.query_vix()
 
         self.assertEqual([20.0, 20.0, 0.0, 0.0], analysis.get_price_history()["VIX"].tolist())
+
+    def test_query_vix_respects_min_supported_start_date(self):
+        analysis = PriceAnalysis(
+            "SPY",
+            datetime.datetime(1989, 1, 1),
+            datetime.datetime(1990, 1, 10),
+            3,
+            self.output_dir,
+            stats_vix=True,
+        )
+        analysis._PriceAnalysis__price_history_df = pd.DataFrame(
+            {
+                "Date": [
+                    datetime.date(1990, 1, 10),
+                    datetime.date(1990, 1, 9),
+                    datetime.date(1990, 1, 8),
+                    datetime.date(1990, 1, 5),
+                ],
+                "Open": [100.0, 100.0, 100.0, 100.0],
+                "Close": [101.0, 101.0, 101.0, 101.0],
+            }
+        )
+        captured = {}
+
+        class CaptureTicker:
+            def __init__(self, symbol: str):
+                self.symbol = symbol
+
+            def history(self, start=None, end=None):
+                captured[self.symbol] = (start, end)
+                if self.symbol == "^VIX":
+                    return pd.DataFrame(
+                        {"Close": [20.0, 21.0]},
+                        index=pd.to_datetime(["1990-01-10", "1990-01-09"]),
+                    )
+                return pd.DataFrame()
+
+        with patch("helper.data_analysis.yf.Ticker", side_effect=lambda symbol: CaptureTicker(symbol)):
+            analysis.query_vix()
+
+        self.assertEqual(datetime.datetime(1990, 1, 2), captured["^VIX"][0])
+        self.assertIn("VIX", analysis.get_price_history().columns)
 
     def test_weekly_grouping_handles_one_sided_data(self):
         analysis = PriceAnalysis("SPY", self.start, self.end, 23, self.output_dir, stats_vix=False)
@@ -410,6 +493,23 @@ class TestPriceAnalysisIntegration(unittest.TestCase):
         self.assertIn("Open gap-up / down analysis", html)
         self.assertIn("Daily change according to VIX", html)
         self.assertTrue((analysis.get_price_history()["VIX"] == 0.0).all())
+
+    def test_run_skips_short_dte_when_trading_days_are_below_week(self):
+        asset_df = build_asset_history_df().head(4)
+        analysis = PriceAnalysis(
+            "SPY",
+            datetime.datetime(2024, 1, 1),
+            datetime.datetime(2024, 1, 10),
+            3,
+            self.output_dir,
+            stats_vix=False,
+            do_plot=False,
+        )
+
+        with patch("helper.data_analysis.yf.Ticker", side_effect=make_ticker_factory(asset_df)):
+            analysis.run()
+
+        self.assertIsNone(analysis._PriceAnalysis__weekly_short_dte_change_df)
 
     def test_run_generates_html_report_with_custom_long_dte(self):
         asset_df = build_asset_history_df()
