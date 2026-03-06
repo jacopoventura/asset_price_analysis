@@ -5,6 +5,7 @@ import math
 import os
 import sys
 from pathlib import Path
+from urllib.parse import quote
 
 import appdirs as ad
 import numpy as np
@@ -59,6 +60,7 @@ class PriceAnalysis:
         """
 
         self.__SOURCE = 'stooq'
+        self.__VIX_SOURCE = "disabled" if not stats_vix else "not queried"
 
         self.__DO_PLOT = do_plot
         self.__STATS_VIX = stats_vix
@@ -155,6 +157,7 @@ class PriceAnalysis:
             self.query_vix()
         else:
             self.__price_history_df["VIX"] = 0.0
+            self.__VIX_SOURCE = "disabled"
 
         # Step 2: calculate daily statistics
         self.__calc_daily_statistics()
@@ -275,7 +278,7 @@ class PriceAnalysis:
             close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if ((daily_open_pct[i] <= gap) and (daily_open_pct[i] > (
                     gap - self.__STEP_GAP_OPEN)))]
             key = "]" + str(gap - self.__STEP_GAP_OPEN) + "; " + str(gap) + "]%"
-            self.__stats_positive_gap[str(gap) + " %"] = {"gap": key}
+            self.__stats_positive_gap[str(gap) + " %"] = {"gap": key, "count days": len(close_list)}
             if close_list:
                 cpf = self.__calc_cpf(close_list, x_cpf_positive_open)
             else:
@@ -287,7 +290,7 @@ class PriceAnalysis:
         close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if daily_open_pct[i] > gap_positive_list[-1]]
         gap = gap_positive_list[-1]
         key = ">" + str(gap) + " %"
-        self.__stats_positive_gap[">+" + str(gap) + " %"] = {"gap": key}
+        self.__stats_positive_gap[">+" + str(gap) + " %"] = {"gap": key, "count days": len(close_list)}
         if close_list:
             cpf = self.__calc_cpf(close_list, x_cpf_positive_open)
         else:
@@ -298,7 +301,7 @@ class PriceAnalysis:
         # all positive gap-ups
         close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if daily_open_pct[i] > 0]
         key = "positive open %"
-        self.__stats_positive_gap[">0 %"] = {"gap": key}
+        self.__stats_positive_gap[">0 %"] = {"gap": key, "count days": len(close_list)}
         if close_list:
             cpf = self.__calc_cpf(close_list, x_cpf_positive_open)
         else:
@@ -311,7 +314,7 @@ class PriceAnalysis:
             close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if ((daily_open_pct[i] >= gap) and (daily_open_pct[i] < (
                     gap + self.__STEP_GAP_OPEN)))]
             key = "[" + str(gap) + "; " + str(gap - self.__STEP_GAP_OPEN) + "[%"
-            self.__stats_negative_gap[str(gap) + " %"] = {"gap": key}
+            self.__stats_negative_gap[str(gap) + " %"] = {"gap": key, "count days": len(close_list)}
             if close_list:
                 cpf = self.__calc_cpf([-i for i in close_list], [-i for i in x_cpf_negative_open])
             else:
@@ -323,7 +326,7 @@ class PriceAnalysis:
         close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if daily_open_pct[i] < gap_negative_list[-1]]
         gap = gap_negative_list[-1]
         key = ">" + str(gap) + " %"
-        self.__stats_negative_gap[">+" + str(gap) + " %"] = {"gap": key}
+        self.__stats_negative_gap[">+" + str(gap) + " %"] = {"gap": key, "count days": len(close_list)}
         if close_list:
             cpf = self.__calc_cpf([-i for i in close_list], [-i for i in x_cpf_negative_open])
         else:
@@ -334,7 +337,7 @@ class PriceAnalysis:
         # all negative gap-ups
         close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if daily_open_pct[i] < 0]
         key = "negative open %"
-        self.__stats_negative_gap[">0 %"] = {"gap": key}
+        self.__stats_negative_gap[">0 %"] = {"gap": key, "count days": len(close_list)}
         if close_list:
             cpf = self.__calc_cpf([-i for i in close_list], [-i for i in x_cpf_negative_open])
         else:
@@ -369,8 +372,9 @@ class PriceAnalysis:
         """
         data = np.sort(input_data, kind="stable")
 
-        dict_cumulative_dist = {"frequency [%]": 0}
+        dict_cumulative_dist = {"frequency [%]": 0, "count days": 0}
         num_days = len(data)
+        dict_cumulative_dist["count days"] = num_days
         if num_days == 0:
             for pct in self.__BINS_DAILY_CHANGE:
                 dict_cumulative_dist[str(int(pct * 10) / 10) + "% change"] = 0.0
@@ -482,36 +486,136 @@ class PriceAnalysis:
         finance.yahoo.com/quote/%5EVIX/history?period1=631238400&period2=1689206400&interval=1d&filter=history&frequency=1d&includeAdjustedClose=true
         """
 
-        try:
-            # vix_history_df = yf.download('^VIX', start = self.__date_start_vix, end=self.__date_end)
-            vix_history_df = yf.Ticker("^VIX")
-            vix_history_df = vix_history_df.history(start=self.__date_start_vix, end=self.__date_end)
+        self.__VIX_SOURCE = "none"
 
-        except Exception as e:
-            print('WARNING: cannot query historical data of VIX. VIX stats set to 0:', e)
+        if self.__date_end <= self.__date_start_vix:
+            print("WARNING: requested VIX period ends before 02/01/1990. VIX stats set to 0.")
             self.__price_history_df["VIX"] = 0.0
             return
+
+        vix_history_df = self.__query_vix_yahoo()
+        if vix_history_df.empty:
+            vix_history_df = self.__query_vix_stooq()
 
         if vix_history_df.empty:
-            print('WARNING: empty VIX dataset returned. VIX stats set to 0.')
+            print('WARNING: empty VIX dataset returned from all sources. VIX stats set to 0.')
             self.__price_history_df["VIX"] = 0.0
             return
 
-        vix_history_df["Date"] = [d.date() for d in vix_history_df.index.to_list()]
-        vix_history_df.set_index("Date", inplace=True)
-        # Append VIX column after the last column of the dataframe
-        self.__price_history_df["VIX"] = 0.
-        vix_date_list = vix_history_df.index.values
-        for vix_date in vix_date_list:
-            vix = vix_history_df.loc[vix_date]["Close"]
-            self.__price_history_df.loc[self.__price_history_df['Date'] == vix_date, "VIX"] = vix
+        vix_close_series = pd.to_numeric(vix_history_df["Close"], errors="coerce")
+        vix_index_date = [d.date() for d in pd.to_datetime(vix_history_df.index).to_list()]
+        vix_series = pd.Series(vix_close_series.values, index=vix_index_date)
+        vix_series = vix_series[~vix_series.index.duplicated(keep="last")]
 
-        # Fill unavailable vix data with the value of the previous day. Loop from oldest (idx=len(list)) to the most recent day (idx=0)
-        vix_history_close_list = self.__price_history_df["VIX"].to_list()
-        for idx in range(len(vix_history_close_list) - 2, -1, -1):
-            if vix_history_close_list[idx] == 0:
-                vix_history_close_list[idx] = vix_history_close_list[idx + 1]
-        self.__price_history_df["VIX"] = vix_history_close_list
+        self.__price_history_df["VIX"] = self.__price_history_df["Date"].map(vix_series).fillna(0.0)
+        self.__price_history_df["VIX"] = self.__price_history_df["VIX"].replace(0.0, np.nan).bfill().fillna(0.0)
+
+    @staticmethod
+    def __normalize_ohlc_dataframe(input_df: pd.DataFrame) -> pd.DataFrame:
+        if input_df.empty:
+            return pd.DataFrame()
+
+        output_df = input_df.copy()
+        if isinstance(output_df.columns, pd.MultiIndex):
+            expected_ohlc_names = {"Open", "High", "Low", "Close", "Adj Close", "Volume"}
+            level_0_names = [str(col[0]) if isinstance(col, tuple) and len(col) > 0 else str(col) for col in output_df.columns]
+            level_1_names = [str(col[1]) if isinstance(col, tuple) and len(col) > 1 else "" for col in output_df.columns]
+            level_0_hits = sum(name in expected_ohlc_names for name in level_0_names)
+            level_1_hits = sum(name in expected_ohlc_names for name in level_1_names)
+
+            # yfinance can return either (field, ticker) or (ticker, field).
+            if level_1_hits > level_0_hits:
+                output_df.columns = [col[1] if isinstance(col, tuple) and len(col) > 1 else col for col in output_df.columns]
+            else:
+                output_df.columns = [col[0] if isinstance(col, tuple) and len(col) > 0 else col for col in output_df.columns]
+
+        rename_map = {
+            "close": "Close",
+            "adj close": "Adj Close",
+            "open": "Open",
+            "high": "High",
+            "low": "Low",
+            "volume": "Volume",
+        }
+        output_df.rename(
+            columns={column: rename_map.get(str(column).lower(), column) for column in output_df.columns},
+            inplace=True,
+        )
+
+        if "Close" not in output_df.columns and "Adj Close" in output_df.columns:
+            output_df["Close"] = output_df["Adj Close"]
+
+        if "Close" not in output_df.columns:
+            print(f"WARNING: queried dataframe has no Close column. Available columns: {list(output_df.columns)}")
+            return pd.DataFrame()
+
+        output_df = output_df.loc[:, ~output_df.columns.duplicated(keep="last")]
+        output_df = output_df.loc[~output_df.index.duplicated(keep="last")]
+        return output_df
+
+    def __query_vix_yahoo(self) -> pd.DataFrame:
+        vix_history_df = pd.DataFrame()
+        query_methods = [
+            ("yahoo_download (^VIX)", lambda: yf.download(
+                "^VIX",
+                start=self.__date_start_vix,
+                end=self.__date_end,
+                group_by="column",
+                progress=False,
+                auto_adjust=False,
+                threads=False,
+            )),
+            ("yahoo_history (^VIX)", lambda: yf.Ticker("^VIX").history(start=self.__date_start_vix, end=self.__date_end)),
+        ]
+
+        for source_label, query_method in query_methods:
+            try:
+                vix_history_df = self.__normalize_ohlc_dataframe(query_method())
+                if not vix_history_df.empty:
+                    self.__VIX_SOURCE = source_label
+                    return vix_history_df
+            except Exception as error:
+                print(f"WARNING: cannot query historical data of VIX from Yahoo: {error}")
+        return pd.DataFrame()
+
+    def __query_vix_stooq(self) -> pd.DataFrame:
+        stooq_symbols = ["^VIX", "VIX"]
+
+        if web is not None:
+            for vix_symbol in stooq_symbols:
+                try:
+                    vix_history_df = web.DataReader(vix_symbol, "stooq", self.__date_start_vix, self.__date_end)
+                    vix_history_df = self.__normalize_ohlc_dataframe(vix_history_df)
+                    if not vix_history_df.empty:
+                        self.__VIX_SOURCE = f"stooq_pdr ({vix_symbol})"
+                        print(f"INFO: using stooq fallback source for {vix_symbol}")
+                        return vix_history_df
+                except Exception as error:
+                    print(f"WARNING: stooq fallback query failed for {vix_symbol}: {error}")
+
+        for vix_symbol in ["^VIX", "^vix", "VIX", "vix"]:
+            try:
+                stooq_url = (
+                    "https://stooq.com/q/d/l/"
+                    f"?s={quote(vix_symbol)}"
+                    f"&i=d&d1={self.__date_start_vix.strftime('%Y%m%d')}"
+                    f"&d2={self.__date_end.strftime('%Y%m%d')}"
+                )
+                vix_history_df = pd.read_csv(stooq_url)
+                vix_history_df = self.__normalize_ohlc_dataframe(vix_history_df)
+                if vix_history_df.empty:
+                    continue
+                if "Date" in vix_history_df.columns:
+                    vix_history_df["Date"] = pd.to_datetime(vix_history_df["Date"])
+                    vix_history_df.set_index("Date", inplace=True)
+                if not vix_history_df.empty:
+                    self.__VIX_SOURCE = f"stooq_csv ({vix_symbol})"
+                    print(f"INFO: using stooq CSV fallback source for {vix_symbol}")
+                    return vix_history_df
+            except Exception as error:
+                print(f"WARNING: stooq CSV fallback query failed for {vix_symbol}: {error}")
+
+        return pd.DataFrame()
 
     def __calc_daily_statistics_vix(self):
         """
@@ -520,68 +624,69 @@ class PriceAnalysis:
         :return: None
         """
 
-        # Check values of the vix <= min(BINS_VIX)
-        filtered_df = self.__price_history_df.loc[self.__price_history_df['VIX'] <= min(self.__BINS_VIX)]
-        vix_key = str(min(self.__BINS_VIX))
-        if not filtered_df.empty:
-            positive_daily_change = filtered_df.loc[filtered_df["Close wrt close"] > 0]["Close wrt close"].tolist()
-            negative_daily_change = filtered_df.loc[filtered_df["Close wrt close"] < 0]["Close wrt close"].tolist()
-            count_positive_days = len(positive_daily_change)
-            count_negative_days = len(negative_daily_change)
-            count_days = count_positive_days + count_negative_days
-            if len(negative_daily_change) > 0:
-                self.__dict_daily_change_vix_bins[vix_key]["cumulative negative"] = self.__calc_cumulative_probability(negative_daily_change)
-                self.__dict_daily_change_vix_bins[vix_key]["cumulative negative"]["frequency [%]"] = 100. * count_negative_days / count_days
-                self.__dict_daily_change_vix_bins[vix_key]["cumulative negative"]["count days"] = count_negative_days
-            if len(positive_daily_change) > 0:
-                self.__dict_daily_change_vix_bins[vix_key]["cumulative positive"] = self.__calc_cumulative_probability(positive_daily_change)
-                self.__dict_daily_change_vix_bins[vix_key]["cumulative positive"]["frequency [%]"] = 100. * count_positive_days / count_days
-                self.__dict_daily_change_vix_bins[vix_key]["cumulative positive"]["count days"] = count_positive_days
-        self.__dict_daily_change_vix_bins[vix_key]["cumulative negative"]["VIX"] = vix_key+"]"
-        self.__dict_daily_change_vix_bins[vix_key]["cumulative positive"]["VIX"] = vix_key+"]"
+        # Initialize all bins with empty cumulative distributions, so sample-size
+        # information is available even when a bin has no observations.
+        for key in self.__dict_daily_change_vix_bins.keys():
+            self.__dict_daily_change_vix_bins[key]["cumulative negative"] = self.__calc_cumulative_probability([])
+            self.__dict_daily_change_vix_bins[key]["cumulative positive"] = self.__calc_cumulative_probability([])
 
-        # Check values of the vix > max(BINS_VIX)
-        filtered_df = self.__price_history_df.loc[self.__price_history_df['VIX'] > max(self.__BINS_VIX)]
-        vix_key = str(max(self.__BINS_VIX)) + "+"
-        if not filtered_df.empty:
-            positive_daily_change = filtered_df.loc[filtered_df["Close wrt close"] > 0]["Close wrt close"].tolist()
-            negative_daily_change = filtered_df.loc[filtered_df["Close wrt close"] < 0]["Close wrt close"].tolist()
-            count_positive_days = len(positive_daily_change)
-            count_negative_days = len(negative_daily_change)
-            count_days = count_positive_days + count_negative_days
-            if len(negative_daily_change) > 0:
-                self.__dict_daily_change_vix_bins[vix_key]["cumulative negative"] = self.__calc_cumulative_probability(negative_daily_change)
-                self.__dict_daily_change_vix_bins[vix_key]["cumulative negative"]["frequency [%]"] = 100. * count_negative_days / count_days
-                self.__dict_daily_change_vix_bins[vix_key]["cumulative negative"]["count days"] = count_negative_days
-            if len(positive_daily_change) > 0:
-                self.__dict_daily_change_vix_bins[vix_key]["cumulative positive"] = self.__calc_cumulative_probability(positive_daily_change)
-                self.__dict_daily_change_vix_bins[vix_key]["cumulative positive"]["frequency [%]"] = 100. * count_positive_days / count_days
-                self.__dict_daily_change_vix_bins[vix_key]["cumulative positive"]["count days"] = count_positive_days
-        self.__dict_daily_change_vix_bins[vix_key]["cumulative negative"]["VIX"] = "]" + vix_key
-        self.__dict_daily_change_vix_bins[vix_key]["cumulative positive"]["VIX"] = "]" + vix_key
+        vix_changes_by_bin = {}
+        vix_labels_by_bin = {}
+
+        min_vix = min(self.__BINS_VIX)
+        max_vix = max(self.__BINS_VIX)
+
+        min_vix_key = str(min_vix)
+        filtered_df = self.__price_history_df.loc[self.__price_history_df['VIX'] <= min_vix]
+        vix_changes_by_bin[min_vix_key] = {
+            "positive": filtered_df.loc[filtered_df["Close wrt close"] > 0]["Close wrt close"].tolist(),
+            "negative": filtered_df.loc[filtered_df["Close wrt close"] < 0]["Close wrt close"].tolist(),
+        }
+        vix_labels_by_bin[min_vix_key] = min_vix_key + "]"
+
+        max_vix_key = str(max_vix) + "+"
+        filtered_df = self.__price_history_df.loc[self.__price_history_df['VIX'] > max_vix]
+        vix_changes_by_bin[max_vix_key] = {
+            "positive": filtered_df.loc[filtered_df["Close wrt close"] > 0]["Close wrt close"].tolist(),
+            "negative": filtered_df.loc[filtered_df["Close wrt close"] < 0]["Close wrt close"].tolist(),
+        }
+        vix_labels_by_bin[max_vix_key] = "]" + max_vix_key
 
         # Check the vix intervals
         for idx in range(len(self.__BINS_VIX) - 1):
             vix_min = self.__BINS_VIX[idx]
             vix_max = self.__BINS_VIX[idx + 1]
-            filtered_df = self.__price_history_df.loc[(self.__price_history_df['VIX'] > vix_min) & (self.__price_history_df['VIX'] <= vix_max)]
             vix_key = str(vix_max)
-            if not filtered_df.empty:
-                positive_daily_change = filtered_df.loc[filtered_df["Close wrt close"] > 0]["Close wrt close"].tolist()
-                negative_daily_change = filtered_df.loc[filtered_df["Close wrt close"] < 0]["Close wrt close"].tolist()
-                count_positive_days = len(positive_daily_change)
-                count_negative_days = len(negative_daily_change)
-                count_days = count_positive_days + count_negative_days
-                if len(negative_daily_change) > 0:
-                    self.__dict_daily_change_vix_bins[vix_key]["cumulative negative"] = self.__calc_cumulative_probability(negative_daily_change)
-                    self.__dict_daily_change_vix_bins[vix_key]["cumulative negative"]["frequency [%]"] = 100. * count_negative_days / count_days
-                    self.__dict_daily_change_vix_bins[vix_key]["cumulative negative"]["count days"] = count_negative_days
-                if len(positive_daily_change) > 0:
-                    self.__dict_daily_change_vix_bins[vix_key]["cumulative positive"] = self.__calc_cumulative_probability(positive_daily_change)
-                    self.__dict_daily_change_vix_bins[vix_key]["cumulative positive"]["frequency [%]"] = 100. * count_positive_days / count_days
-                    self.__dict_daily_change_vix_bins[vix_key]["cumulative positive"]["count days"] = count_positive_days
-            self.__dict_daily_change_vix_bins[vix_key]["cumulative negative"]["VIX"] = "]"+str(vix_min)+"; " + str(vix_max) + "]"
-            self.__dict_daily_change_vix_bins[vix_key]["cumulative positive"]["VIX"] = "]"+str(vix_min)+"; " + str(vix_max) + "]"
+            filtered_df = self.__price_history_df.loc[
+                (self.__price_history_df['VIX'] > vix_min) & (self.__price_history_df['VIX'] <= vix_max)
+            ]
+            vix_changes_by_bin[vix_key] = {
+                "positive": filtered_df.loc[filtered_df["Close wrt close"] > 0]["Close wrt close"].tolist(),
+                "negative": filtered_df.loc[filtered_df["Close wrt close"] < 0]["Close wrt close"].tolist(),
+            }
+            vix_labels_by_bin[vix_key] = "]" + str(vix_min) + "; " + str(vix_max) + "]"
+
+        total_positive_days = sum(len(v["positive"]) for v in vix_changes_by_bin.values())
+        total_negative_days = sum(len(v["negative"]) for v in vix_changes_by_bin.values())
+
+        for vix_key in self.__dict_daily_change_vix_bins.keys():
+            positive_daily_change = vix_changes_by_bin[vix_key]["positive"]
+            negative_daily_change = vix_changes_by_bin[vix_key]["negative"]
+
+            if negative_daily_change:
+                cumulative_negative = self.__calc_cumulative_probability(negative_daily_change)
+                cumulative_negative["frequency [%]"] = 100.0 * len(negative_daily_change) / total_negative_days
+                cumulative_negative["count days"] = len(negative_daily_change)
+                self.__dict_daily_change_vix_bins[vix_key]["cumulative negative"] = cumulative_negative
+
+            if positive_daily_change:
+                cumulative_positive = self.__calc_cumulative_probability(positive_daily_change)
+                cumulative_positive["frequency [%]"] = 100.0 * len(positive_daily_change) / total_positive_days
+                cumulative_positive["count days"] = len(positive_daily_change)
+                self.__dict_daily_change_vix_bins[vix_key]["cumulative positive"] = cumulative_positive
+
+            self.__dict_daily_change_vix_bins[vix_key]["cumulative negative"]["VIX"] = vix_labels_by_bin[vix_key]
+            self.__dict_daily_change_vix_bins[vix_key]["cumulative positive"]["VIX"] = vix_labels_by_bin[vix_key]
 
     def __write_html(self):
         """
@@ -600,6 +705,8 @@ class PriceAnalysis:
                 fo.write(" to " + self.__date_end.strftime('%d/%m/%Y'))
                 fo.write(" (" + str(int(self.__number_of_weeks)) + " weeks)")
                 fo.write("<br/>Number of trading days analyzed: " + str(self.__number_of_trading_days))
+                fo.write("<br/>Asset data source: " + self.__SOURCE)
+                fo.write("<br/>VIX data source: " + self.__VIX_SOURCE)
                 fo.write("<br/>Documented created on: " + datetime.datetime.today().strftime('%d/%m/%Y'))
                 fo.write('<br/>' + "Tables contain the <u>cumulative probability</u> of change.")
 
@@ -724,6 +831,7 @@ class PriceAnalysis:
 
         st.write(" ")
         st.markdown("<h4 style='text-align: center; '>Price change cumulative probability</h4>", unsafe_allow_html=True)
+        st.write(f"Data source: asset={self.__SOURCE}, vix={self.__VIX_SOURCE}")
         st.write(f"The tables in this section contain the **cumulative probability** of the change in price up to a certain level (column).")
 
         # Daily and weekly stats
@@ -1455,8 +1563,8 @@ class PriceAnalysis:
         num_positive = len(positive_change)
         num_negative = len(negative_change)
         pct_list = np.linspace(0, pct_max, int((pct_max / step)) + 1)
-        dict_positive = {"frequency [%]": 0}
-        dict_negative = {"frequency [%]": 0}
+        dict_positive = {"frequency [%]": 0, "count days": num_positive}
+        dict_negative = {"frequency [%]": 0, "count days": num_negative}
         if num_negative + num_positive > 0:
             dict_positive["frequency [%]"] = 100.0 * num_positive / (num_positive + num_negative)
             dict_negative["frequency [%]"] = 100.0 * num_negative / (num_positive + num_negative)
@@ -1512,3 +1620,11 @@ class PriceAnalysis:
         :rtype: str
         """
         return self.__SOURCE
+
+    def get_vix_source(self) -> str:
+        """
+        Return source for VIX query.
+        :return: VIX history query source
+        :rtype: str
+        """
+        return self.__VIX_SOURCE

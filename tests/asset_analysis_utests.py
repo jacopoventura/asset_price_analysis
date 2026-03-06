@@ -167,10 +167,16 @@ class TestCumulativeProbability(unittest.TestCase):
     def test_cumulative_empty_data(self):
         cpf = spy._PriceAnalysis__calc_cumulative_probability([])
         self.assertEqual(0, cpf["frequency [%]"])
+        self.assertEqual(0, cpf["count days"])
         for pct in spy._PriceAnalysis__BINS_DAILY_CHANGE:
             key = str(int(pct * 10) / 10) + "% change"
             self.assertIn(key, cpf)
             self.assertEqual(0.0, cpf[key])
+
+    def test_distribution_includes_count_days(self):
+        positive, negative = spy._PriceAnalysis__calc_distribution([1.0, -1.0, 2.0], 3, 1)
+        self.assertEqual(2, positive["count days"])
+        self.assertEqual(1, negative["count days"])
 
     def test_mean_confidence_interval_empty_data(self):
         stats = spy._PriceAnalysis__mean_confidence_interval([])
@@ -204,7 +210,7 @@ class TestCumulativeProbability(unittest.TestCase):
         beyond_bucket = analysis._PriceAnalysis__stats_negative_gap[beyond_key]
         no_data = analysis._PriceAnalysis__NO__DATA_INDICATOR
 
-        value_keys = [key for key in beyond_bucket.keys() if key != "gap"]
+        value_keys = [key for key in beyond_bucket.keys() if key not in {"gap", "count days"}]
         self.assertGreater(len(value_keys), 0)
         for key in value_keys:
             self.assertEqual(
@@ -228,6 +234,8 @@ class TestCumulativeProbability(unittest.TestCase):
         self.assertGreater(len(analysis._PriceAnalysis__stats_negative_gap), 0)
         sample_negative_row = next(iter(analysis._PriceAnalysis__stats_negative_gap.values()))
         sample_positive_row = next(iter(analysis._PriceAnalysis__stats_positive_gap.values()))
+        self.assertIn("count days", sample_negative_row)
+        self.assertIn("count days", sample_positive_row)
         self.assertGreater(len([k for k in sample_negative_row if k != "gap"]), 0)
         self.assertGreater(len([k for k in sample_positive_row if k != "gap"]), 0)
 
@@ -314,10 +322,32 @@ class TestPriceAnalysisIntegration(unittest.TestCase):
             index=pd.to_datetime(["2024-01-04"]),
         )
 
-        with patch("helper.data_analysis.yf.Ticker", side_effect=make_ticker_factory(pd.DataFrame(), vix_df)):
+        with patch("helper.data_analysis.yf.download", return_value=pd.DataFrame()), \
+                patch("helper.data_analysis.yf.Ticker", side_effect=make_ticker_factory(pd.DataFrame(), vix_df)):
             analysis.query_vix()
 
         self.assertEqual([20.0, 20.0, 0.0, 0.0], analysis.get_price_history()["VIX"].tolist())
+
+    def test_normalize_ohlc_dataframe_handles_ticker_first_multiindex(self):
+        analysis = PriceAnalysis("SPY", self.start, self.end, 23, self.output_dir, stats_vix=True)
+        raw_df = pd.DataFrame(
+            [[20.1, 20.3, 19.8, 20.0, 1000]],
+            index=pd.to_datetime(["2024-01-04"]),
+            columns=pd.MultiIndex.from_tuples(
+                [
+                    ("^VIX", "Open"),
+                    ("^VIX", "High"),
+                    ("^VIX", "Low"),
+                    ("^VIX", "Close"),
+                    ("^VIX", "Volume"),
+                ]
+            ),
+        )
+
+        normalized = analysis._PriceAnalysis__normalize_ohlc_dataframe(raw_df)
+
+        self.assertIn("Close", normalized.columns)
+        self.assertEqual(20.0, float(normalized["Close"].iloc[0]))
 
     def test_query_vix_respects_min_supported_start_date(self):
         analysis = PriceAnalysis(
@@ -355,11 +385,98 @@ class TestPriceAnalysisIntegration(unittest.TestCase):
                     )
                 return pd.DataFrame()
 
-        with patch("helper.data_analysis.yf.Ticker", side_effect=lambda symbol: CaptureTicker(symbol)):
+        with patch("helper.data_analysis.yf.download", return_value=pd.DataFrame()), \
+                patch("helper.data_analysis.yf.Ticker", side_effect=lambda symbol: CaptureTicker(symbol)):
             analysis.query_vix()
 
         self.assertEqual(datetime.datetime(1990, 1, 2), captured["^VIX"][0])
         self.assertIn("VIX", analysis.get_price_history().columns)
+
+    def test_daily_vix_frequency_is_normalized_across_bins(self):
+        analysis = PriceAnalysis("SPY", self.start, self.end, 23, self.output_dir, stats_vix=True)
+        analysis._PriceAnalysis__price_history_df = pd.DataFrame(
+            {
+                "VIX": [9.0, 9.5, 11.0, 12.0, 14.0, 42.0, 42.5, 20.0],
+                "Close wrt close": [-1.0, 1.0, -2.0, -0.5, 1.2, -0.4, 0.6, 0.0],
+            }
+        )
+
+        analysis._PriceAnalysis__calc_daily_statistics_vix()
+
+        bins_dict = analysis._PriceAnalysis__dict_daily_change_vix_bins
+        negative_frequency_sum = sum(float(v["cumulative negative"]["frequency [%]"]) for v in bins_dict.values())
+        positive_frequency_sum = sum(float(v["cumulative positive"]["frequency [%]"]) for v in bins_dict.values())
+
+        self.assertAlmostEqual(100.0, negative_frequency_sum, places=6)
+        self.assertAlmostEqual(100.0, positive_frequency_sum, places=6)
+        self.assertEqual(2, bins_dict["13"]["cumulative negative"]["count days"])
+        self.assertEqual(1, bins_dict["10"]["cumulative negative"]["count days"])
+        self.assertEqual(1, bins_dict["40+"]["cumulative negative"]["count days"])
+
+    def test_query_vix_falls_back_to_stooq_when_yahoo_fails(self):
+        analysis = PriceAnalysis("SPY", self.start, self.end, 23, self.output_dir, stats_vix=True)
+        analysis._PriceAnalysis__price_history_df = pd.DataFrame(
+            {
+                "Date": [
+                    datetime.date(2024, 1, 5),
+                    datetime.date(2024, 1, 4),
+                    datetime.date(2024, 1, 3),
+                    datetime.date(2024, 1, 2),
+                ],
+                "Open": [100.0, 100.0, 100.0, 100.0],
+                "Close": [101.0, 101.0, 101.0, 101.0],
+            }
+        )
+        stooq_vix_df = pd.DataFrame(
+            {"Close": [20.0]},
+            index=pd.to_datetime(["2024-01-04"]),
+        )
+
+        with patch("helper.data_analysis.yf.download", side_effect=Exception("yahoo down")), \
+                patch("helper.data_analysis.yf.Ticker", side_effect=Exception("yahoo down")), \
+                patch("helper.data_analysis.web") as mock_web:
+            mock_web.DataReader.return_value = stooq_vix_df
+            analysis.query_vix()
+
+        self.assertTrue(mock_web.DataReader.called)
+        call_args = mock_web.DataReader.call_args_list[0].args
+        self.assertIn(call_args[0], ["^VIX", "VIX"])
+        self.assertEqual("stooq", call_args[1])
+        self.assertEqual([20.0, 20.0, 0.0, 0.0], analysis.get_price_history()["VIX"].tolist())
+
+    def test_query_vix_falls_back_to_stooq_csv_when_pdr_unavailable(self):
+        analysis = PriceAnalysis("SPY", self.start, self.end, 23, self.output_dir, stats_vix=True)
+        analysis._PriceAnalysis__price_history_df = pd.DataFrame(
+            {
+                "Date": [
+                    datetime.date(2024, 1, 5),
+                    datetime.date(2024, 1, 4),
+                    datetime.date(2024, 1, 3),
+                    datetime.date(2024, 1, 2),
+                ],
+                "Open": [100.0, 100.0, 100.0, 100.0],
+                "Close": [101.0, 101.0, 101.0, 101.0],
+            }
+        )
+        stooq_csv_df = pd.DataFrame(
+            {
+                "Date": ["2024-01-04", "2024-01-03"],
+                "Open": [20.0, 19.5],
+                "High": [20.2, 19.8],
+                "Low": [19.8, 19.2],
+                "Close": [20.0, 19.4],
+                "Volume": [100, 100],
+            }
+        )
+
+        with patch("helper.data_analysis.yf.download", side_effect=Exception("yahoo down")), \
+                patch("helper.data_analysis.yf.Ticker", side_effect=Exception("yahoo down")), \
+                patch("helper.data_analysis.web", None), \
+                patch("helper.data_analysis.pd.read_csv", return_value=stooq_csv_df) as mock_read_csv:
+            analysis.query_vix()
+
+        self.assertTrue(mock_read_csv.called)
+        self.assertEqual([20.0, 20.0, 19.4, 0.0], analysis.get_price_history()["VIX"].tolist())
 
     def test_weekly_grouping_handles_one_sided_data(self):
         analysis = PriceAnalysis("SPY", self.start, self.end, 23, self.output_dir, stats_vix=False)
@@ -492,7 +609,18 @@ class TestPriceAnalysisIntegration(unittest.TestCase):
         self.assertIn("Daily and weekly change stats", html)
         self.assertIn("Open gap-up / down analysis", html)
         self.assertIn("Daily change according to VIX", html)
+        self.assertIn("Asset data source: yahoo", html)
+        self.assertIn("VIX data source: disabled", html)
+        self.assertEqual("disabled", analysis.get_vix_source())
         self.assertTrue((analysis.get_price_history()["VIX"] == 0.0).all())
+        self.assertIn("count days", analysis._PriceAnalysis__daily_change_df.columns)
+        self.assertIn("count days", analysis._PriceAnalysis__weekly_change_df.columns)
+        if analysis._PriceAnalysis__monthly_dte_change_df is not None:
+            self.assertIn("count days", analysis._PriceAnalysis__monthly_dte_change_df.columns)
+        self.assertEqual(
+            0,
+            analysis._PriceAnalysis__dict_daily_change_vix_bins["40+"]["cumulative negative"]["count days"],
+        )
 
     def test_run_skips_short_dte_when_trading_days_are_below_week(self):
         asset_df = build_asset_history_df().head(4)
@@ -526,6 +654,7 @@ class TestPriceAnalysisIntegration(unittest.TestCase):
         self.assertIn(f"Change in {custom_dte} DTE", html)
         self.assertIn(f"Stats {custom_dte} DTE negative change", html)
         self.assertNotIn("Change in 23 DTE", html)
+        self.assertIn("count days", analysis._PriceAnalysis__monthly_dte_change_df.columns)
 
     def test_run_generates_html_report_with_plots_enabled(self):
         asset_df = build_asset_history_df()
@@ -541,6 +670,26 @@ class TestPriceAnalysisIntegration(unittest.TestCase):
         self.assertIn("plotly-graph-div", html)
         self.assertIn("Weekly change", html)
         self.assertIn("10 DTE change", html)
+
+    def test_run_tracks_vix_source_in_report_header(self):
+        asset_df = build_asset_history_df()
+        vix_df = pd.DataFrame(
+            {"Close": [20.0, 19.8, 19.5]},
+            index=pd.to_datetime(["2024-01-05", "2024-01-04", "2024-01-03"]),
+        )
+        analysis = PriceAnalysis("SPY", self.start, self.end, 23, self.output_dir, stats_vix=True, do_plot=False)
+
+        with patch("helper.data_analysis.yf.Ticker", side_effect=make_ticker_factory(asset_df, vix_df)), \
+                patch("helper.data_analysis.yf.download", return_value=vix_df.copy()):
+            analysis.run()
+
+        self.assertTrue(os.path.exists(analysis.FILENAME))
+        with open(analysis.FILENAME, "r") as output_file:
+            html = output_file.read()
+
+        self.assertIn("Asset data source: yahoo", html)
+        self.assertIn("VIX data source: yahoo_download (^VIX)", html)
+        self.assertEqual("yahoo_download (^VIX)", analysis.get_vix_source())
 
     def test_weekly_conditional_stats_group_by_year_and_week(self):
         analysis = PriceAnalysis("SPY", self.start, self.end, 23, self.output_dir, stats_vix=False)
