@@ -68,6 +68,14 @@ class TestCumulativeProbability(unittest.TestCase):
         solution = get_solution_from_dict(cpf, [-i for i in dataset["negative_detailed"]["bins"]])
         self.assertEqual(dataset["negative_detailed"]["cpf"], solution)
 
+    def test_cumulative_empty_data(self):
+        cpf = spy._PriceAnalysis__calc_cumulative_probability([])
+        self.assertEqual(0, cpf["frequency [%]"])
+        for pct in spy._PriceAnalysis__BINS_DAILY_CHANGE:
+            key = str(int(pct * 10) / 10) + "% change"
+            self.assertIn(key, cpf)
+            self.assertEqual(0.0, cpf[key])
+
 
 if __name__ == '__main__':
     unittest.main()

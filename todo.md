@@ -25,27 +25,6 @@ Project: `asset_price_analysis`
     - `helper/data_analysis.py:944`
     - `helper/data_analysis.py:1024`
 
-## High
-
-- [ ] Guard cumulative probability function against empty input.
-  - Problem: code accesses `data[0]` without checking length.
-  - Impact: crashes when dataset is all-positive or all-negative after filtering.
-  - Ref: `helper/data_analysis.py:404`
-
-- [ ] Fix VIX fill logic out-of-bounds access.
-  - Problem: fill loop reads `idx + 1` even at last element.
-  - Impact: potential `IndexError` when latest row has missing VIX value.
-  - Refs:
-    - `helper/data_analysis.py:518`
-    - `helper/data_analysis.py:520`
-
-- [ ] Guard weekly summary min/max/mean calculations against empty lists.
-  - Problem: `np.min/np.max/np.mean` used without empty checks on positive/negative buckets.
-  - Impact: crashes in one-sided periods.
-  - Refs:
-    - `helper/data_analysis.py:1102`
-    - `helper/data_analysis.py:1117`
-
 ## Medium
 
 - [ ] Fix gap-down “beyond max gap” sign condition.
@@ -72,10 +51,6 @@ Project: `asset_price_analysis`
   - Current tests validate only cumulative probability helpers.
   - Add integration/edge-case tests for date handling, weekly grouping, VIX filling, and report generation paths.
   - Ref: `tests/asset_analysis_utests.py`
-
-- [ ] Improve repository hygiene.
-  - Add root `.gitignore`.
-  - Stop tracking generated artifacts: `venv/`, `__pycache__/`, local HTML outputs, `.DS_Store`.
 
 ## Project Snapshot
 
