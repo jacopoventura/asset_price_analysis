@@ -2,7 +2,10 @@
 
 import unittest
 import datetime
+import os
 import re
+import tempfile
+from unittest.mock import patch
 import pandas as pd
 from helper.data_analysis import PriceAnalysis
 
@@ -33,6 +36,49 @@ start = datetime.datetime(2022, 1, 1)  # Year, Month, Day
 end = datetime.datetime(2023, 2, 10)  # Year, Month, Day
 dte = 23
 spy = PriceAnalysis("SPY", start, end, dte, "/tmp/")
+
+
+def build_asset_history_df() -> pd.DataFrame:
+    """
+    Build deterministic price history with both positive and negative daily moves.
+    Index is intentionally ascending to validate sorting in query_asset_price.
+    """
+    dates = pd.bdate_range("2024-01-01", periods=15)
+    close_list = [100, 101, 99, 102, 101, 103, 100, 104, 103, 105, 102, 106, 104, 107, 105]
+    open_list = [100.2, 100.6, 99.4, 101.5, 101.2, 102.5, 100.5, 103.8, 102.6, 105.4, 101.7, 106.2, 103.5, 107.3, 104.8]
+    low_list = [min(day_open, day_close) - 1.0 for day_open, day_close in zip(open_list, close_list)]
+    high_list = [max(day_open, day_close) + 1.0 for day_open, day_close in zip(open_list, close_list)]
+    return pd.DataFrame(
+        {
+            "Open": open_list,
+            "High": high_list,
+            "Low": low_list,
+            "Close": close_list,
+            "Volume": [1_000_000] * len(dates),
+        },
+        index=dates,
+    )
+
+
+class FakeTicker:
+    def __init__(self, symbol: str, asset_df: pd.DataFrame, vix_df: pd.DataFrame | None):
+        self._symbol = symbol
+        self._asset_df = asset_df
+        self._vix_df = vix_df
+
+    def history(self, start=None, end=None) -> pd.DataFrame:
+        if self._symbol == "^VIX":
+            if self._vix_df is None:
+                return pd.DataFrame()
+            return self._vix_df.copy()
+        return self._asset_df.copy()
+
+
+def make_ticker_factory(asset_df: pd.DataFrame, vix_df: pd.DataFrame | None = None):
+    def factory(symbol: str):
+        return FakeTicker(symbol, asset_df, vix_df)
+
+    return factory
 
 
 # helper
@@ -101,6 +147,98 @@ class TestCumulativeProbability(unittest.TestCase):
                 beyond_bucket[key],
                 msg=f"Expected no data for {key}, got {beyond_bucket[key]!r}",
             )
+
+
+class TestPriceAnalysisIntegration(unittest.TestCase):
+    def setUp(self):
+        self.start = datetime.datetime(2024, 1, 1)
+        self.end = datetime.datetime(2024, 2, 10)
+        self.tmp_dir = tempfile.TemporaryDirectory()
+        self.output_dir = self.tmp_dir.name + "/"
+
+    def tearDown(self):
+        self.tmp_dir.cleanup()
+
+    def test_query_asset_price_normalizes_dates_and_week_fields(self):
+        asset_df = build_asset_history_df()
+        analysis = PriceAnalysis("SPY", self.start, self.end, 23, self.output_dir, stats_vix=False)
+
+        with patch("helper.data_analysis.yf.Ticker", side_effect=make_ticker_factory(asset_df)):
+            analysis.query_asset_price()
+
+        price_df = analysis.get_price_history()
+        self.assertEqual("yahoo", analysis.get_source())
+        self.assertEqual(len(asset_df), len(price_df))
+        self.assertGreater(price_df["Date"].iloc[0], price_df["Date"].iloc[-1])
+        for key in ["Weekday", "Week number", "Year", "Open wrt close", "Close wrt close"]:
+            self.assertIn(key, price_df.columns)
+
+    def test_query_vix_fills_missing_values_without_out_of_bounds(self):
+        analysis = PriceAnalysis("SPY", self.start, self.end, 23, self.output_dir, stats_vix=True)
+        analysis._PriceAnalysis__price_history_df = pd.DataFrame(
+            {
+                "Date": [
+                    datetime.date(2024, 1, 5),
+                    datetime.date(2024, 1, 4),
+                    datetime.date(2024, 1, 3),
+                    datetime.date(2024, 1, 2),
+                ],
+                "Open": [100.0, 100.0, 100.0, 100.0],
+                "Close": [101.0, 101.0, 101.0, 101.0],
+            }
+        )
+        vix_df = pd.DataFrame(
+            {"Close": [20.0]},
+            index=pd.to_datetime(["2024-01-04"]),
+        )
+
+        with patch("helper.data_analysis.yf.Ticker", side_effect=make_ticker_factory(pd.DataFrame(), vix_df)):
+            analysis.query_vix()
+
+        self.assertEqual([20.0, 20.0, 0.0, 0.0], analysis.get_price_history()["VIX"].tolist())
+
+    def test_weekly_grouping_handles_one_sided_data(self):
+        analysis = PriceAnalysis("SPY", self.start, self.end, 23, self.output_dir, stats_vix=False)
+        dates_desc = [day.date() for day in pd.bdate_range("2024-01-08", "2024-01-19")[::-1]]
+        week_numbers = [pd.Timestamp(day).isocalendar().week for day in dates_desc]
+        years = [day.year for day in dates_desc]
+        analysis._PriceAnalysis__price_history_df = pd.DataFrame(
+            {
+                "Date": dates_desc,
+                "Week number": week_numbers,
+                "Year": years,
+                "Open": [100.0] * len(dates_desc),
+                "Close": [101.0] * len(dates_desc),
+                "Low": [99.0] * len(dates_desc),
+                "VIX": [12.0] * len(dates_desc),
+            }
+        )
+        analysis._PriceAnalysis__years_list = sorted(set(years))
+
+        analysis._PriceAnalysis__calc_weekly_statistics()
+        weekly_df = analysis._PriceAnalysis__weekly_change_df
+
+        for row_name in ["Monday to Friday: negative", "Friday to Friday: negative"]:
+            self.assertEqual(0.0, float(weekly_df.loc[row_name, "Max drawdown [%]"]))
+            self.assertEqual(0.0, float(weekly_df.loc[row_name, "Avg drawdown [%]"]))
+            self.assertEqual(0.0, float(weekly_df.loc[row_name, "Max VIX increment [%]"]))
+            self.assertEqual(0.0, float(weekly_df.loc[row_name, "Avg VIX increment [%]"]))
+
+    def test_run_generates_html_report_with_mocked_data(self):
+        asset_df = build_asset_history_df()
+        analysis = PriceAnalysis("SPY", self.start, self.end, 23, self.output_dir, stats_vix=False, do_plot=False)
+
+        with patch("helper.data_analysis.yf.Ticker", side_effect=make_ticker_factory(asset_df)):
+            analysis.run()
+
+        self.assertTrue(os.path.exists(analysis.FILENAME))
+        with open(analysis.FILENAME, "r") as output_file:
+            html = output_file.read()
+
+        self.assertIn("Daily and weekly change stats", html)
+        self.assertIn("Open gap-up / down analysis", html)
+        self.assertIn("Daily change according to VIX", html)
+        self.assertTrue((analysis.get_price_history()["VIX"] == 0.0).all())
 
 
 if __name__ == '__main__':
