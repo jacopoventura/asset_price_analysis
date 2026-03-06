@@ -14,5 +14,8 @@ venv/
 .cache/
 .pytest_cache/
 
+# IDE files
+.idea/
+
 # Local generated analysis reports
 *_to_*.html

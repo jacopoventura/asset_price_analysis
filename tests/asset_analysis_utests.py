@@ -60,6 +60,55 @@ def build_asset_history_df() -> pd.DataFrame:
     )
 
 
+def build_monotonic_bull_history_df(periods: int = 40) -> pd.DataFrame:
+    """
+    Build descending-ordered dataframe (production-like ordering) where price
+    strictly increases forward in time.
+    """
+    dates_asc = pd.bdate_range("2024-01-01", periods=periods)
+    close_asc = [100.0 + idx for idx in range(periods)]
+    open_asc = [close - 0.3 for close in close_asc]
+    low_asc = [day_open - 0.5 for day_open in open_asc]
+
+    dates_desc = [date.date() for date in dates_asc[::-1]]
+    close_desc = close_asc[::-1]
+    open_desc = open_asc[::-1]
+    low_desc = low_asc[::-1]
+
+    return pd.DataFrame(
+        {
+            "Date": dates_desc,
+            "Week number": [pd.Timestamp(day).isocalendar().week for day in dates_desc],
+            "Year": [day.year for day in dates_desc],
+            "Open": open_desc,
+            "Close": close_desc,
+            "Low": low_desc,
+            "VIX": [20.0] * periods,
+        }
+    )
+
+
+def build_new_year_crossing_week_df() -> pd.DataFrame:
+    """
+    Build one ISO week that crosses calendar years (Dec -> Jan).
+    """
+    dates = pd.to_datetime(["2024-12-30", "2024-12-31", "2025-01-01", "2025-01-02", "2025-01-03"])
+    close_list = [100.0, 101.0, 102.0, 103.0, 104.0]
+    open_list = [close - 0.2 for close in close_list]
+    low_list = [day_open - 0.5 for day_open in open_list]
+    high_list = [close + 0.5 for close in close_list]
+    return pd.DataFrame(
+        {
+            "Open": open_list,
+            "High": high_list,
+            "Low": low_list,
+            "Close": close_list,
+            "Volume": [1_000_000] * len(dates),
+        },
+        index=dates,
+    )
+
+
 class FakeTicker:
     def __init__(self, symbol: str, asset_df: pd.DataFrame, vix_df: pd.DataFrame | None):
         self._symbol = symbol
@@ -123,6 +172,14 @@ class TestCumulativeProbability(unittest.TestCase):
             self.assertIn(key, cpf)
             self.assertEqual(0.0, cpf[key])
 
+    def test_mean_confidence_interval_empty_data(self):
+        stats = spy._PriceAnalysis__mean_confidence_interval([])
+        self.assertEqual([0.0, 0.0, 0.0, 0.0], stats)
+
+    def test_mean_confidence_interval_single_value(self):
+        stats = spy._PriceAnalysis__mean_confidence_interval([2.5])
+        self.assertEqual([2.5, 0.0, 2.5, 2.5], stats)
+
     def test_gapdown_beyond_max_gap_bucket_uses_negative_threshold(self):
         analysis = PriceAnalysis("SPY", start, end, dte, "/tmp/")
         analysis._PriceAnalysis__price_history_df = pd.DataFrame(
@@ -172,6 +229,30 @@ class TestPriceAnalysisIntegration(unittest.TestCase):
         self.assertGreater(price_df["Date"].iloc[0], price_df["Date"].iloc[-1])
         for key in ["Weekday", "Week number", "Year", "Open wrt close", "Close wrt close"]:
             self.assertIn(key, price_df.columns)
+
+    def test_query_asset_price_uses_iso_year_for_new_year_crossing_week(self):
+        asset_df = build_new_year_crossing_week_df()
+        analysis = PriceAnalysis(
+            "SPY",
+            datetime.datetime(2024, 12, 29),
+            datetime.datetime(2025, 1, 4),
+            3,
+            self.output_dir,
+            stats_vix=False,
+        )
+
+        with patch("helper.data_analysis.yf.Ticker", side_effect=make_ticker_factory(asset_df)):
+            analysis.query_asset_price()
+
+        price_df = analysis.get_price_history()
+        for _, row in price_df.iterrows():
+            iso = pd.Timestamp(row["Date"]).isocalendar()
+            self.assertEqual(int(iso.week), int(row["Week number"]))
+            self.assertEqual(int(iso.year), int(row["Year"]))
+
+        weekly_frames = analysis._PriceAnalysis__get_weekly_timeframes(min_days=1)
+        self.assertEqual(1, len(weekly_frames))
+        self.assertEqual(len(asset_df), len(weekly_frames[0]))
 
     def test_query_vix_fills_missing_values_without_out_of_bounds(self):
         analysis = PriceAnalysis("SPY", self.start, self.end, 23, self.output_dir, stats_vix=True)
@@ -224,6 +305,96 @@ class TestPriceAnalysisIntegration(unittest.TestCase):
             self.assertEqual(0.0, float(weekly_df.loc[row_name, "Max VIX increment [%]"]))
             self.assertEqual(0.0, float(weekly_df.loc[row_name, "Avg VIX increment [%]"]))
 
+    def test_calc_change_dte_direction_is_forward_in_time(self):
+        analysis = PriceAnalysis("SPY", self.start, self.end, 3, self.output_dir, stats_vix=False)
+        dates_desc = [day.date() for day in pd.bdate_range("2024-01-01", periods=8)[::-1]]
+        closes_desc = [107.0, 106.0, 105.0, 104.0, 103.0, 102.0, 101.0, 100.0]
+        analysis._PriceAnalysis__price_history_df = pd.DataFrame(
+            {
+                "Date": dates_desc,
+                "Close": closes_desc,
+                "Low": [close - 1.0 for close in closes_desc],
+                "VIX": [20.0] * len(closes_desc),
+            }
+        )
+        analysis._PriceAnalysis__number_of_trading_days = len(closes_desc)
+
+        change_list_df, _, _ = analysis._PriceAnalysis__calc_change_DTE(3)
+
+        for change in change_list_df["change_list"]:
+            self.assertGreater(change, 0.0)
+
+    def test_time_direction_consistency_across_metrics(self):
+        analysis = PriceAnalysis("SPY", self.start, self.end, 23, self.output_dir, stats_vix=False)
+        history_df = build_monotonic_bull_history_df(periods=40)
+        analysis._PriceAnalysis__price_history_df = history_df.copy()
+        analysis._PriceAnalysis__number_of_trading_days = len(history_df)
+
+        analysis._PriceAnalysis__calc_day_change_wrt_previous_day()
+        daily_changes = analysis.get_price_history()["Close wrt close"].tolist()[:-1]
+        for change in daily_changes:
+            self.assertGreater(change, 0.0)
+
+        weekly_changes, _, _ = analysis._PriceAnalysis__calc_weekly_movement()
+        self.assertGreater(len(weekly_changes), 0)
+        for change in weekly_changes:
+            self.assertGreater(change, 0.0)
+
+        friday_to_friday_changes, _, _ = analysis._PriceAnalysis__calc_weekly_friday_to_friday_movement()
+        self.assertGreater(len(friday_to_friday_changes), 0)
+        for change in friday_to_friday_changes:
+            self.assertGreater(change, 0.0)
+
+        for dte_value in [5, 23]:
+            dte_change_df, _, _ = analysis._PriceAnalysis__calc_change_DTE(dte_value)
+            self.assertGreater(len(dte_change_df["change_list"]), 0)
+            for change in dte_change_df["change_list"]:
+                self.assertGreater(change, 0.0)
+
+    def test_weekly_plot_hides_date_ticks_but_keeps_period_in_hover(self):
+        analysis = PriceAnalysis("SPY", self.start, self.end, 23, self.output_dir, stats_vix=False)
+        history_df = build_monotonic_bull_history_df(periods=40)
+        analysis._PriceAnalysis__price_history_df = history_df.copy()
+        analysis._PriceAnalysis__number_of_trading_days = len(history_df)
+        analysis._PriceAnalysis__calc_weekly_conditional_statistics()
+
+        fig = analysis._PriceAnalysis__make_plot_weekly_change()
+        first_trace = fig.data[0]
+
+        self.assertIsNone(fig.layout.xaxis.ticktext)
+        self.assertFalse(fig.layout.xaxis.showticklabels)
+        self.assertIn("Period: %{customdata}", first_trace.hovertemplate)
+        self.assertGreater(len(first_trace.x), 0)
+        self.assertEqual(len(first_trace.x), len(first_trace.customdata))
+        self.assertIn("-", first_trace.customdata[0])
+
+    def test_monthly_plot_does_not_use_dense_date_tick_labels(self):
+        analysis = PriceAnalysis("SPY", self.start, self.end, 23, self.output_dir, stats_vix=False)
+        analysis._PriceAnalysis__change_list_monthly_dte_for_plot_df = {
+            "change_list": [1.0, -0.5, 0.8, -1.2],
+            "date range": ["01/01 - 01/02/2024", "02/01 - 02/02/2024", "03/01 - 03/02/2024", "04/01 - 04/02/2024"],
+        }
+
+        fig, _ = analysis._PriceAnalysis__make_plot_monthly_change()
+
+        self.assertIsNone(fig.layout.xaxis.ticktext)
+        self.assertIsNone(fig.layout.xaxis.tickvals)
+
+    def test_monthly_plot_hover_uses_period_and_orders_oldest_to_newest(self):
+        analysis = PriceAnalysis("SPY", self.start, self.end, 23, self.output_dir, stats_vix=False)
+        analysis._PriceAnalysis__change_list_monthly_dte_for_plot_df = {
+            # index 0 = most recent, last index = oldest (production convention)
+            "change_list": [1.0, 2.0, 3.0],
+            "date range": ["recent", "middle", "oldest"],
+        }
+
+        fig, _ = analysis._PriceAnalysis__make_plot_monthly_change()
+        positive_trace = fig.data[0]
+
+        self.assertEqual([0, 1, 2], list(positive_trace.x))
+        self.assertEqual(["oldest", "middle", "recent"], list(positive_trace.customdata))
+        self.assertIn("Period: %{customdata}", positive_trace.hovertemplate)
+
     def test_run_generates_html_report_with_mocked_data(self):
         asset_df = build_asset_history_df()
         analysis = PriceAnalysis("SPY", self.start, self.end, 23, self.output_dir, stats_vix=False, do_plot=False)
@@ -239,6 +410,37 @@ class TestPriceAnalysisIntegration(unittest.TestCase):
         self.assertIn("Open gap-up / down analysis", html)
         self.assertIn("Daily change according to VIX", html)
         self.assertTrue((analysis.get_price_history()["VIX"] == 0.0).all())
+
+    def test_run_generates_html_report_with_custom_long_dte(self):
+        asset_df = build_asset_history_df()
+        custom_dte = 10
+        analysis = PriceAnalysis("SPY", self.start, self.end, custom_dte, self.output_dir, stats_vix=False, do_plot=False)
+
+        with patch("helper.data_analysis.yf.Ticker", side_effect=make_ticker_factory(asset_df)):
+            analysis.run()
+
+        self.assertTrue(os.path.exists(analysis.FILENAME))
+        with open(analysis.FILENAME, "r") as output_file:
+            html = output_file.read()
+
+        self.assertIn(f"Change in {custom_dte} DTE", html)
+        self.assertIn(f"Stats {custom_dte} DTE negative change", html)
+        self.assertNotIn("Change in 23 DTE", html)
+
+    def test_run_generates_html_report_with_plots_enabled(self):
+        asset_df = build_asset_history_df()
+        analysis = PriceAnalysis("SPY", self.start, self.end, 10, self.output_dir, stats_vix=False, do_plot=True)
+
+        with patch("helper.data_analysis.yf.Ticker", side_effect=make_ticker_factory(asset_df)):
+            analysis.run()
+
+        self.assertTrue(os.path.exists(analysis.FILENAME))
+        with open(analysis.FILENAME, "r") as output_file:
+            html = output_file.read()
+
+        self.assertIn("plotly-graph-div", html)
+        self.assertIn("Weekly change", html)
+        self.assertIn("10 DTE change", html)
 
     def test_weekly_conditional_stats_group_by_year_and_week(self):
         analysis = PriceAnalysis("SPY", self.start, self.end, 23, self.output_dir, stats_vix=False)

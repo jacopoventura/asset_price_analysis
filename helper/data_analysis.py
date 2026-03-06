@@ -462,9 +462,10 @@ class PriceAnalysis:
         years_list = []
         for index, _ in self.__price_history_df.iterrows():
             d = pd.to_datetime(index)
+            iso = d.isocalendar()
             weekday_list.append(d.weekday())
-            weeknumber_list.append(d.isocalendar()[1])
-            years_list.append(d.year)
+            weeknumber_list.append(iso[1])
+            years_list.append(iso[0])
         self.__price_history_df.insert(0, "Weekday", weekday_list)
         self.__price_history_df.insert(1, "Week number", weeknumber_list)
         self.__price_history_df.insert(2, "Year", years_list)
@@ -629,8 +630,9 @@ class PriceAnalysis:
                     fo.write(df_to_html_1_decimal(self.__weekly_short_dte_change_df))
 
                 # monthly dte
+                figure_dte_change = None
                 if self.__monthly_dte_change_df is not None:
-                    fo.write('<br/>' + '<br/>' + "Change in " + str(self.__MONTH_TRADING_DAYS))
+                    fo.write('<br/>' + '<br/>' + "Change in " + str(self.__DTE_LONG))
                     fo.write(" DTE (effective trading days, (open the position every day close and close at the DTE closing price)")
                     fo.write("<br>" + str(self.__number_of_trading_days) + " analyzed days (last OPEN ")
                     fo.write(self.__price_history_df["Date"][self.__number_of_trading_days - self.__DTE_LONG].strftime(
@@ -638,7 +640,7 @@ class PriceAnalysis:
                     fo.write('<br/>')
                     fo.write(df_to_html_1_decimal(self.__monthly_dte_change_df))
                     figure_dte_change, negative_change_stats = self.__make_plot_monthly_change()
-                    fo.write('Stats ' + str(self.__MONTH_TRADING_DAYS) + ' DTE negative change:')
+                    fo.write('Stats ' + str(self.__DTE_LONG) + ' DTE negative change:')
                     fo.write('<br/>')
                     fo.write('Average: ' + '{:.1f}'.format(negative_change_stats[0]) +
                              '%, confidence interval: [' + '{:.1f}'.format(negative_change_stats[2]) + '; ' +
@@ -650,7 +652,7 @@ class PriceAnalysis:
                         fo.write('<br/>')
                         figure_weekly_change = self.__make_plot_weekly_change()
                         fo.write((figure_weekly_change.to_html(full_html=False, include_plotlyjs='cdn')))
-                    if self.__number_of_days > self.__MONTH_TRADING_DAYS:
+                    if figure_dte_change is not None:
                         fo.write('<br/>')
                         fo.write((figure_dte_change.to_html(full_html=False, include_plotlyjs='cdn')))
 
@@ -739,7 +741,7 @@ class PriceAnalysis:
 
         # Monthly (dte-based) stats
         if self.__monthly_dte_change_df is not None:
-            st.write("Long DTE movements: price change (close to close) in " + str(self.__MONTH_TRADING_DAYS) + " trading days. " +
+            st.write("Long DTE movements: price change (close to close) in " + str(self.__DTE_LONG) + " trading days. " +
                      str(self.__number_of_trading_days) + " analyzed days. Last: " + self.__price_history_df["Date"][
                          self.__number_of_trading_days - self.__DTE_LONG].strftime(
                         '%d/%m/%Y') + ". Open the position at every day close and close at the DTE closing price.")
@@ -902,13 +904,24 @@ class PriceAnalysis:
                    )
         ])
 
+        weekly_frames = self.__get_weekly_timeframes(min_days=1)
+        week_id = list(range(1, len(weekly_frames) + 1))
         week_dates = []
-        week_id = list(range(1, self.__number_of_weeks+1))
-        for week_number in week_id:
-            week_df = self.__price_history_df.loc[self.__price_history_df["Week number"] == week_number]
+        for week_df in weekly_frames:
             first_day = week_df["Date"].iloc[0].strftime('%d/%m')
             last_day = week_df["Date"].iloc[-1].strftime('%d/%m - %Y')
             week_dates.append(first_day + "-" + last_day)
+        week_period_map = {week: period for week, period in zip(week_id, week_dates)}
+
+        def get_periods(week_list: list) -> list:
+            return [week_period_map.get(week, "") for week in week_list]
+
+        fig.data[0].customdata = get_periods(week_positive_if_first_positive["week"])
+        fig.data[1].customdata = get_periods(week_positive_if_first_negative["week"])
+        fig.data[2].customdata = get_periods(week_negative_if_first_negative["week"])
+        fig.data[3].customdata = get_periods(week_negative_if_first_positive["week"])
+        for trace in fig.data:
+            trace.hovertemplate = "Period: %{customdata}<br>Change: %{y:.2f}%<extra></extra>"
 
         fig.update_layout(
             title="<b>Weekly change<b>",
@@ -916,7 +929,7 @@ class PriceAnalysis:
             xaxis=dict(
                 tickmode='array',
                 tickvals=week_id,
-                ticktext=week_dates
+                showticklabels=False
             )
         )
 
@@ -935,16 +948,21 @@ class PriceAnalysis:
         :rtype: list
         """
 
-        month_positive = {"day num": [], "change": []}
-        month_negative = {"day num": [], "change": []}
+        month_positive = {"day num": [], "change": [], "period": []}
+        month_negative = {"day num": [], "change": [], "period": []}
 
-        for idx, change in enumerate(self.__change_list_monthly_dte_for_plot_df["change_list"]):
+        change_list = list(reversed(self.__change_list_monthly_dte_for_plot_df["change_list"]))
+        date_range = list(reversed(self.__change_list_monthly_dte_for_plot_df["date range"]))
+
+        for idx, (change, period) in enumerate(zip(change_list, date_range)):
             if change > 0:
                 month_positive["change"].append(change)
                 month_positive["day num"].append(idx)
+                month_positive["period"].append(period)
             else:
                 month_negative["change"].append(change)
                 month_negative["day num"].append(idx)
+                month_negative["period"].append(period)
 
         # Make bar plot
         fig = go.Figure(data=[
@@ -955,6 +973,8 @@ class PriceAnalysis:
                        color='green',
                        line_color='green'
                    ),
+                   customdata=month_positive["period"],
+                   hovertemplate="Period: %{customdata}<br>Change: %{y:.2f}%<extra></extra>",
                    width=self.__PLOT_COLUMN_WIDTH
                    ),
             go.Bar(name='negative change',
@@ -964,6 +984,8 @@ class PriceAnalysis:
                        color='red',
                        line_color='red'
                    ),
+                   customdata=month_negative["period"],
+                   hovertemplate="Period: %{customdata}<br>Change: %{y:.2f}%<extra></extra>",
                    width=self.__PLOT_COLUMN_WIDTH
                    )
         ])
@@ -971,13 +993,8 @@ class PriceAnalysis:
         # calculate statistics for negative change
         confidence_interval = self.__mean_confidence_interval(month_negative["change"])
         fig.update_layout(
-            title="<b>" + str(self.__MONTH_TRADING_DAYS) + " DTE change<b>",
-            title_x=0.5,
-            xaxis=dict(
-                tickmode='array',
-                tickvals=list(range(1, len(self.__change_list_monthly_dte_for_plot_df["date range"]))),
-                ticktext=self.__change_list_monthly_dte_for_plot_df["date range"]
-            )
+            title="<b>" + str(self.__DTE_LONG) + " DTE change<b>",
+            title_x=0.5
         )
 
         # Change the bar mode
@@ -998,6 +1015,12 @@ class PriceAnalysis:
         :rtype: list
         """
         n = len(data)
+        if n == 0:
+            return [0.0, 0.0, 0.0, 0.0]
+        if n == 1:
+            mean = float(data[0])
+            return [mean, 0.0, mean, mean]
+
         dof = n - 1
         mean, standard_deviation = np.mean(data), np.std(data)
         t_crit = np.abs(t.ppf((1 - confidence) / 2., dof))
@@ -1018,7 +1041,7 @@ class PriceAnalysis:
         """
 
         change_list_df, drawdown_dict, vix_change_dict = self.__calc_change_DTE(dte)
-        if dte == self.__MONTH_TRADING_DAYS:
+        if dte == self.__DTE_LONG:
             self.__change_list_monthly_dte_for_plot_df = change_list_df
         change_list = change_list_df["change_list"]
         change_positive, change_negative = self.__calc_distribution(change_list, max_change_pct, self.__STEP)
@@ -1342,13 +1365,14 @@ class PriceAnalysis:
         date_list = self.__price_history_df["Date"].to_list()
         vix_list = self.__price_history_df["VIX"].to_list()
         daily_low_list = self.__price_history_df["Low"].to_list()
-        # loop in inverse order: the open price is at location idx - dte, closing price at location idx
+        # loop in inverse order on a descending-date dataframe:
+        # open is at idx (older), close-after-dte is at idx-dte (newer)
         for idx in range(self.__number_of_trading_days - 1, dte - 1, -1):
-            close_after_dte_days = price_close_list[idx]
-            open_price_at_close = price_close_list[idx - dte]
+            open_price_at_close = price_close_list[idx]
+            close_after_dte_days = price_close_list[idx - dte]
             vix_within_dte = vix_list[(idx - dte):idx+1]
             low_within_dte = daily_low_list[(idx - dte):idx+1]
-            vix_open = vix_within_dte[0]
+            vix_open = vix_list[idx]
             max_vix = np.max(vix_within_dte)
             vix_increase_max = 0
             if vix_open != 0:
