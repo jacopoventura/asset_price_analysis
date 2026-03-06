@@ -274,70 +274,38 @@ class PriceAnalysis:
         # gap up
         for gap in gap_positive_list:
             close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if ((daily_open_pct[i] <= gap) and (daily_open_pct[i] > (
-                    gap-self.__STEP_GAP_OPEN)))]
-            key = "]"+str(gap-self.__STEP_GAP_OPEN)+"; "+str(gap)+"]%"
+                    gap - self.__STEP_GAP_OPEN)))]
+            key = "]" + str(gap - self.__STEP_GAP_OPEN) + "; " + str(gap) + "]%"
             self.__stats_positive_gap[str(gap) + " %"] = {"gap": key}
-            cpf = self.__calc_cpf(close_list, x_cpf_positive_open)
-            if len(cpf) > 0:
-                for i, close in enumerate(x_cpf_positive_open):
-                    self.__stats_positive_gap[str(gap) + " %"][str(int(close*10)/10)+"%"] = cpf[i]
+            if close_list:
+                cpf = self.__calc_cpf(close_list, x_cpf_positive_open)
             else:
-                self.__stats_positive_gap[str(gap) + " %"][str(int(0 * 10) / 10) + "%"] = 0
+                cpf = [self.__NO__DATA_INDICATOR] * len(x_cpf_positive_open)
+            for idx, close_pct in enumerate(x_cpf_positive_open):
+                self.__stats_positive_gap[str(gap) + " %"][str(int(close_pct * 10) / 10) + "%"] = cpf[idx]
 
         # above the max gap considered in the list
         close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if daily_open_pct[i] > gap_positive_list[-1]]
-        key = ">" + str(gap_positive_list[-1]) + " %"
-        self.__stats_positive_gap[">+" + str(gap_positive_list[-1]) + " %"] = {"gap": key}
-        cpf = self.__calc_cpf(close_list, x_cpf_positive_open)
-        if len(cpf) > 0:
-            for i, close in enumerate(x_cpf_positive_open):
-                self.__stats_positive_gap[">+" + str(gap_positive_list[-1]) + " %"][str(int(close * 10) / 10) + "%"] = cpf[i]
+        gap = gap_positive_list[-1]
+        key = ">" + str(gap) + " %"
+        self.__stats_positive_gap[">+" + str(gap) + " %"] = {"gap": key}
+        if close_list:
+            cpf = self.__calc_cpf(close_list, x_cpf_positive_open)
         else:
-            self.__stats_positive_gap[">+" + str(gap_positive_list[-1]) + " %"][str(int(0 * 10) / 10) + "%"] = 0
+            cpf = [self.__NO__DATA_INDICATOR] * len(x_cpf_positive_open)
+        for idx, close_pct in enumerate(x_cpf_positive_open):
+            self.__stats_positive_gap[">+" + str(gap) + " %"][str(int(close_pct * 10) / 10) + "%"] = cpf[idx]
 
         # all positive gap-ups
         close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if daily_open_pct[i] > 0]
         key = "positive open %"
         self.__stats_positive_gap[">0 %"] = {"gap": key}
-        cpf = self.__calc_cpf(close_list, x_cpf_positive_open)
-        for i, close in enumerate(x_cpf_positive_open):
-            self.__stats_positive_gap[">0 %"][str(int(close * 10) / 10) + "%"] = cpf[i]
-
-            # gap up
-            for gap in gap_positive_list:
-                close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if ((daily_open_pct[i] <= gap) and (daily_open_pct[i] > (
-                        gap - self.__STEP_GAP_OPEN)))]
-                key = "]" + str(gap - self.__STEP_GAP_OPEN) + "; " + str(gap) + "]%"
-                self.__stats_positive_gap[str(gap) + " %"] = {"gap": key}
-                if close_list:
-                    cpf = self.__calc_cpf(close_list, x_cpf_positive_open)
-                else:
-                    cpf = [self.__NO__DATA_INDICATOR] * len(x_cpf_positive_open)
-                for idx, close_pct in enumerate(x_cpf_positive_open):
-                    self.__stats_positive_gap[str(gap) + " %"][str(int(close_pct * 10) / 10) + "%"] = cpf[idx]
-
-            # above the max gap considered in the list
-            close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if daily_open_pct[i] > gap_positive_list[-1]]
-            gap = gap_positive_list[-1]
-            key = ">" + str(gap) + " %"
-            self.__stats_positive_gap[">+" + str(gap) + " %"] = {"gap": key}
-            if close_list:
-                cpf = self.__calc_cpf(close_list, x_cpf_positive_open)
-            else:
-                cpf = [self.__NO__DATA_INDICATOR] * len(x_cpf_positive_open)
-            for idx, close_pct in enumerate(x_cpf_positive_open):
-                self.__stats_positive_gap[">+" + str(gap) + " %"][str(int(close_pct * 10) / 10) + "%"] = cpf[idx]
-
-            # all positive gap-ups
-            close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if daily_open_pct[i] > 0]
-            key = "positive open %"
-            self.__stats_positive_gap[">0 %"] = {"gap": key}
-            if close_list:
-                cpf = self.__calc_cpf(close_list, x_cpf_positive_open)
-            else:
-                cpf = [self.__NO__DATA_INDICATOR] * len(x_cpf_positive_open)
-            for idx, close_pct in enumerate(x_cpf_positive_open):
-                self.__stats_positive_gap[">0 %"][str(int(close_pct * 10) / 10) + "%"] = cpf[idx]
+        if close_list:
+            cpf = self.__calc_cpf(close_list, x_cpf_positive_open)
+        else:
+            cpf = [self.__NO__DATA_INDICATOR] * len(x_cpf_positive_open)
+        for idx, close_pct in enumerate(x_cpf_positive_open):
+            self.__stats_positive_gap[">0 %"][str(int(close_pct * 10) / 10) + "%"] = cpf[idx]
 
         # gap down
         for gap in gap_negative_list:

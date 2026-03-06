@@ -25,16 +25,6 @@ Project: `asset_price_analysis`
     - `helper/data_analysis.py:944`
     - `helper/data_analysis.py:1024`
 
-## Medium
-
-- [ ] Remove duplicated gap-up computation block (indentation/structure issue).
-  - Problem: same stats are recomputed and overwritten inside inner loop.
-  - Impact: unnecessary runtime and confusing logic.
-  - Refs:
-    - `helper/data_analysis.py:300`
-    - `helper/data_analysis.py:303`
-    - `helper/data_analysis.py:337`
-
 ## Low
 
 - [ ] Expand test coverage beyond private helper methods.

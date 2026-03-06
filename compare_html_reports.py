@@ -11,7 +11,7 @@ import pandas as pd
 
 # Edit these paths if needed.
 REFERENCE_FILE = "SPY_01012020_to_26022026_reference.html"
-CURRENT_FILE = "SPY_01012020_to_26022026.html"
+CURRENT_FILE = "SPY_01012020_to_26022026_reference.html"
 
 FLOAT_TOLERANCE = 0.1
 MAX_DIFFS_PER_TABLE = 20
