@@ -1,0 +1,36 @@
+[MAIN]
+persistent=no
+jobs=1
+
+[MESSAGES CONTROL]
+disable=
+    # Legacy style/docstring noise
+    missing-module-docstring,
+    missing-class-docstring,
+    missing-function-docstring,
+    line-too-long,
+    too-many-lines,
+    invalid-name,
+    wrong-import-order,
+    wrong-import-position,
+    anomalous-backslash-in-string,
+    f-string-without-interpolation,
+    consider-using-dict-items,
+    consider-iterating-dictionary,
+    consider-using-f-string,
+    use-dict-literal,
+
+    # Legacy architecture complexity
+    too-many-instance-attributes,
+    too-many-arguments,
+    too-many-locals,
+    too-many-statements,
+    too-many-branches,
+    unnecessary-comprehension,
+
+    # Existing test/private API patterns
+    protected-access,
+    cell-var-from-loop,
+    broad-exception-caught,
+    unused-private-member,
+    unspecified-encoding

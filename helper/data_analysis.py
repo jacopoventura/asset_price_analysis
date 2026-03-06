@@ -90,7 +90,6 @@ class PriceAnalysis:
         if self.__number_of_days < np.ceil( (self.__DTE_LONG / 5) * 7):
             st.error(f'Incorrect input dates. Minimum {self.__DTE_LONG} trading days shall be considered.', icon="🚨")
             sys.exit(1)
-            st.stop()
 
         self.__number_of_weeks = math.ceil(self.__number_of_days / 7)
         self.__number_of_trading_days = 0
@@ -475,7 +474,6 @@ class PriceAnalysis:
         if self.__price_history_df.empty:
             st.error('Could not query price data. Please check that the ticker is correct and run the app again.', icon="🚨")
             sys.exit(1)
-            st.stop()
 
         self.__SOURCE = source_used
 
@@ -496,7 +494,7 @@ class PriceAnalysis:
         weekday_list = []
         weeknumber_list = []
         years_list = []
-        for index, row in self.__price_history_df.iterrows():
+        for index, _ in self.__price_history_df.iterrows():
             d = pd.to_datetime(index)
             weekday_list.append(d.weekday())
             weeknumber_list.append(d.isocalendar()[1])
