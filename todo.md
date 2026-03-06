@@ -27,16 +27,6 @@ Project: `asset_price_analysis`
 
 ## Medium
 
-- [ ] Fix gap-down “beyond max gap” sign condition.
-  - Problem: uses `< +2.5` instead of `< -2.5`.
-  - Impact: wrong bucket assignment for negative-gap analysis.
-  - Ref: `helper/data_analysis.py:353`
-
-- [ ] Correct DTE drawdown formula denominator.
-  - Problem: denominator is `lowest_low` instead of opening/reference price.
-  - Impact: drawdown magnitude is distorted.
-  - Ref: `helper/data_analysis.py:1324`
-
 - [ ] Remove duplicated gap-up computation block (indentation/structure issue).
   - Problem: same stats are recomputed and overwritten inside inner loop.
   - Impact: unnecessary runtime and confusing logic.

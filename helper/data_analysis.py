@@ -1370,8 +1370,7 @@ class PriceAnalysis:
             drawdown = 0
             if open_price_at_close != 0:
                 change = 100.0 * (close_after_dte_days - open_price_at_close) / open_price_at_close
-                if lowest_low != 0:
-                    drawdown = 100 * (lowest_low - open_price_at_close) / lowest_low
+                drawdown = 100.0 * (lowest_low - open_price_at_close) / open_price_at_close
                 if change >= 0:
                     drawdown_dict["positive week"].append(drawdown)
                     change_vix_dict["positive week"].append(vix_increase_max)
