@@ -17,7 +17,10 @@ import math
 import numpy as np
 import os
 import pandas as pd
-# import pandas_datareader.data as web
+try:
+    from pandas_datareader import data as web
+except Exception:
+    web = None
 import plotly.graph_objects as go
 import sys
 
@@ -151,7 +154,10 @@ class PriceAnalysis:
             print("Check the following dates: ")
             print(nan_date_list)
             return
-        self.query_vix()
+        if self.__STATS_VIX:
+            self.query_vix()
+        else:
+            self.__price_history_df["VIX"] = 0.0
 
         # Step 2: calculate daily statistics
         self.__calc_daily_statistics()
@@ -439,22 +445,34 @@ class PriceAnalysis:
         Query data of the ticker for the input timerange from the source database.
         """
 
-        # try:
-            # try:
-        self.__price_history_df = yf.Ticker(self.__ticker)
-        self.__price_history_df = self.__price_history_df.history(start=self.__date_start,
-                                                                          end=self.__date_end)
+        self.__price_history_df = pd.DataFrame()
+        source_used = "yahoo"
 
-            #except Exception:
-                #self.__price_history_df = web.DataReader(self.__ticker,
-                #                                         self.__SOURCE,
-                #                                         self.__date_start,
-                #                                         self.__date_end, 10)
+        try:
+            ticker_obj = yf.Ticker(self.__ticker)
+            self.__price_history_df = ticker_obj.history(start=self.__date_start, end=self.__date_end)
+        except Exception as error:
+            print(f"WARNING: Yahoo Finance query failed for {self.__ticker}: {error}")
+
+        if self.__price_history_df.empty and web is not None:
+            try:
+                self.__price_history_df = web.DataReader(
+                    self.__ticker,
+                    "stooq",
+                    self.__date_start,
+                    self.__date_end
+                )
+                source_used = "stooq"
+                print(f"INFO: using stooq fallback source for {self.__ticker}")
+            except Exception as error:
+                print(f"WARNING: stooq fallback query failed for {self.__ticker}: {error}")
 
         if self.__price_history_df.empty:
             st.error('Could not query price data. Please check that the ticker is correct and run the app again.', icon="🚨")
             sys.exit(1)
             st.stop()
+
+        self.__SOURCE = source_used
 
         #except ValueError:
         #    st.error('Cannot query historical data')
@@ -501,8 +519,14 @@ class PriceAnalysis:
             vix_history_df = vix_history_df.history(start=self.__date_start, end=self.__date_end)
 
         except Exception as e:
-            print('Cannot query historical data of VIX:', e)
-            sys.exit(1)  # stop the main function with exit code 1
+            print('WARNING: cannot query historical data of VIX. VIX stats set to 0:', e)
+            self.__price_history_df["VIX"] = 0.0
+            return
+
+        if vix_history_df.empty:
+            print('WARNING: empty VIX dataset returned. VIX stats set to 0.')
+            self.__price_history_df["VIX"] = 0.0
+            return
 
         vix_history_df["Date"] = [d.date() for d in vix_history_df.index.to_list()]
         vix_history_df.set_index("Date", inplace=True)
@@ -515,9 +539,9 @@ class PriceAnalysis:
 
         # Fill unavailable vix data with the value of the previous day. Loop from oldest (idx=len(list)) to the most recent day (idx=0)
         vix_history_close_list = self.__price_history_df["VIX"].to_list()
-        for idx in range(len(vix_history_close_list)-1, -1, -1):
+        for idx in range(len(vix_history_close_list) - 2, -1, -1):
             if vix_history_close_list[idx] == 0:
-                vix_history_close_list[idx] = vix_history_close_list[idx+1]
+                vix_history_close_list[idx] = vix_history_close_list[idx + 1]
         self.__price_history_df["VIX"] = vix_history_close_list
 
     def __calc_daily_statistics_vix(self):
@@ -596,6 +620,9 @@ class PriceAnalysis:
         """
 
         try:
+            def df_to_html_1_decimal(df: pd.DataFrame) -> str:
+                return df.to_html(float_format=lambda x: f"{x:.1f}").replace('<td>', '<td align="center">')
+
             with open(os.path.expanduser(self.FILENAME), 'w') as fo:
                 fo.write("<html>\n<head>\n<title> \nOutput Data in an HTML file \
                           </title>\n</head> <body><h1><center>" + self.__ticker + "</center></h1>\n</body></html>")
@@ -614,12 +641,12 @@ class PriceAnalysis:
                     "<br/>The tables in this sections contain the <b>cumulative probability</b> of the change in price up to a certain level (column).")
                 fo.write('<br/>' + '<br/>' + "Daily change (CLOSE with respect to the previous day CLOSE)")
                 fo.write('<br/>')
-                fo.write(self.__daily_change_df.to_html().replace('<td>', '<td align="center">'))
+                fo.write(df_to_html_1_decimal(self.__daily_change_df))
                 fo.write('<br/>' + '<br/>' + "Weekly change (Friday CLOSE with respect to the previous week Friday CLOSE or Monday OPEN)")
                 fo.write('<br/>')
-                fo.write(self.__weekly_change_df.to_html().replace('<td>', '<td align="center">'))
+                fo.write(df_to_html_1_decimal(self.__weekly_change_df))
                 fo.write('<br/>')
-                fo.write(self.__weekly_change_monday_conditional_df.to_html().replace('<td>', '<td align="center">'))
+                fo.write(df_to_html_1_decimal(self.__weekly_change_monday_conditional_df))
                 fo.write('<br/>')
 
                 # ================================= DTE STATS ===================================
@@ -629,7 +656,7 @@ class PriceAnalysis:
                 if self.__weekly_short_dte_change_df is not None:
                     fo.write('<br/>')
                     fo.write("Short DTE (open the position every day close and close at the DTE closing price)")
-                    fo.write(self.__weekly_short_dte_change_df.to_html().replace('<td>', '<td align="center">'))
+                    fo.write(df_to_html_1_decimal(self.__weekly_short_dte_change_df))
 
                 # monthly dte
                 if self.__monthly_dte_change_df is not None:
@@ -639,7 +666,7 @@ class PriceAnalysis:
                     fo.write(self.__price_history_df["Date"][self.__number_of_trading_days - self.__DTE_LONG].strftime(
                         '%d/%m/%Y') + ")")
                     fo.write('<br/>')
-                    fo.write(self.__monthly_dte_change_df.to_html().replace('<td>', '<td align="center">'))
+                    fo.write(df_to_html_1_decimal(self.__monthly_dte_change_df))
                     figure_dte_change, negative_change_stats = self.__make_plot_monthly_change()
                     fo.write('Stats ' + str(self.__MONTH_TRADING_DAYS) + ' DTE negative change:')
                     fo.write('<br/>')
@@ -666,7 +693,7 @@ class PriceAnalysis:
                 gap_up_df = pd.DataFrame([self.__stats_positive_gap[i] for i in self.__stats_positive_gap.keys()])
                 gap_up_df.set_index("gap", inplace=True)
                 # gap_up_df.index.name = None
-                fo.write(gap_up_df.to_html().replace('<td>', '<td align="center">'))
+                fo.write(df_to_html_1_decimal(gap_up_df))
                 fo.write("<b>HOW TO USE THE TABLE:</b>")
                 fo.write("<br/> - row index: range of the opening gap-up")
                 fo.write("<br/> - column: daily change [%] (close with respect to the previous day's close)")
@@ -679,7 +706,7 @@ class PriceAnalysis:
                 gap_down_df = pd.DataFrame([self.__stats_negative_gap[i] for i in self.__stats_negative_gap.keys()])
                 gap_down_df.set_index("gap", inplace=True)
                 # gap_down_df.index.name = None
-                fo.write(gap_down_df.to_html().replace('<td>', '<td align="center">'))
+                fo.write(df_to_html_1_decimal(gap_down_df))
                 fo.write("<b>HOW TO USE THE TABLE:</b>")
                 fo.write("<br/> - row index: range of the opening gap-down")
                 fo.write("<br/> - column: daily change [%] (close with respect to the previous day's close)")
@@ -696,7 +723,7 @@ class PriceAnalysis:
                 negative_day_vix_df.set_index("VIX", inplace=True)
                 # negative_day_vix_df.index.name = None
                 negative_day_vix_df = negative_day_vix_df.fillna(0)
-                fo.write(negative_day_vix_df.to_html().replace('<td>', '<td align="center">'))
+                fo.write(df_to_html_1_decimal(negative_day_vix_df))
                 fo.write("<b>HOW TO USE THE TABLE:</b>")
                 fo.write("<br/> - row index: range of the VIX")
                 fo.write("<br/> - column: daily change [%] (close with respect to the previous day's close)")
@@ -708,7 +735,7 @@ class PriceAnalysis:
                 positive_day_vix_df.set_index("VIX", inplace=True)
                 # positive_day_vix_df.index.name = None
                 positive_day_vix_df = positive_day_vix_df.fillna(0)
-                fo.write(positive_day_vix_df.to_html().replace('<td>', '<td align="center">'))
+                fo.write(df_to_html_1_decimal(positive_day_vix_df))
                 fo.write("<b>HOW TO USE THE TABLE:</b>")
                 fo.write("<br/> - row index: range of the VIX")
                 fo.write("<br/> - column: daily change [%] (close with respect to the previous day's close)")
@@ -1098,23 +1125,42 @@ class PriceAnalysis:
         friday_to_friday_positive_dict["Case"] = "Friday to Friday: positive"
         friday_to_friday_negative_dict["Case"] = "Friday to Friday: negative"
 
-        # Set drawdown and vix change info
-        monday_to_friday_positive_dict["Max drawdown [%]"] = np.min(weekly_change_monday_to_friday_drawdown_dict["positive week"])
-        monday_to_friday_positive_dict["Avg drawdown [%]"] = np.mean(weekly_change_monday_to_friday_drawdown_dict["positive week"])
-        monday_to_friday_positive_dict["Max VIX increment [%]"] = np.max(weekly_change_monday_to_friday_vix_change_dict["positive week"])
-        monday_to_friday_positive_dict["Avg VIX increment [%]"] = np.mean(weekly_change_monday_to_friday_vix_change_dict["positive week"])
-        monday_to_friday_negative_dict["Max drawdown [%]"] = np.min(weekly_change_monday_to_friday_drawdown_dict["negative week"])
-        monday_to_friday_negative_dict["Avg drawdown [%]"] = np.mean(weekly_change_monday_to_friday_drawdown_dict["negative week"])
-        monday_to_friday_negative_dict["Max VIX increment [%]"] = np.max(weekly_change_monday_to_friday_vix_change_dict["negative week"])
-        monday_to_friday_negative_dict["Avg VIX increment [%]"] = np.mean(weekly_change_monday_to_friday_vix_change_dict["negative week"])
-        friday_to_friday_positive_dict["Max drawdown [%]"] = np.min(weekly_change_friday_to_friday_drawdown_dict["positive week"])
-        friday_to_friday_positive_dict["Avg drawdown [%]"] = np.mean(weekly_change_friday_to_friday_drawdown_dict["positive week"])
-        friday_to_friday_positive_dict["Max VIX increment [%]"] = np.max(weekly_change_friday_to_friday_vix_change_dict["positive week"])
-        friday_to_friday_positive_dict["Avg VIX increment [%]"] = np.mean(weekly_change_friday_to_friday_vix_change_dict["positive week"])
-        friday_to_friday_negative_dict["Max drawdown [%]"] = np.min(weekly_change_friday_to_friday_drawdown_dict["negative week"])
-        friday_to_friday_negative_dict["Avg drawdown [%]"] = np.mean(weekly_change_friday_to_friday_drawdown_dict["negative week"])
-        friday_to_friday_negative_dict["Max VIX increment [%]"] = np.max(weekly_change_friday_to_friday_vix_change_dict["negative week"])
-        friday_to_friday_negative_dict["Avg VIX increment [%]"] = np.mean(weekly_change_friday_to_friday_vix_change_dict["negative week"])
+        # Set drawdown and VIX change info. Some buckets can be empty on small/one-sided datasets.
+        def set_extra_stats(target_dict: dict, drawdown_list: list, vix_change_list: list):
+            if len(drawdown_list) > 0:
+                target_dict["Max drawdown [%]"] = np.min(drawdown_list)
+                target_dict["Avg drawdown [%]"] = np.mean(drawdown_list)
+            else:
+                target_dict["Max drawdown [%]"] = 0
+                target_dict["Avg drawdown [%]"] = 0
+
+            if len(vix_change_list) > 0:
+                target_dict["Max VIX increment [%]"] = np.max(vix_change_list)
+                target_dict["Avg VIX increment [%]"] = np.mean(vix_change_list)
+            else:
+                target_dict["Max VIX increment [%]"] = 0
+                target_dict["Avg VIX increment [%]"] = 0
+
+        set_extra_stats(
+            monday_to_friday_positive_dict,
+            weekly_change_monday_to_friday_drawdown_dict["positive week"],
+            weekly_change_monday_to_friday_vix_change_dict["positive week"]
+        )
+        set_extra_stats(
+            monday_to_friday_negative_dict,
+            weekly_change_monday_to_friday_drawdown_dict["negative week"],
+            weekly_change_monday_to_friday_vix_change_dict["negative week"]
+        )
+        set_extra_stats(
+            friday_to_friday_positive_dict,
+            weekly_change_friday_to_friday_drawdown_dict["positive week"],
+            weekly_change_friday_to_friday_vix_change_dict["positive week"]
+        )
+        set_extra_stats(
+            friday_to_friday_negative_dict,
+            weekly_change_friday_to_friday_drawdown_dict["negative week"],
+            weekly_change_friday_to_friday_vix_change_dict["negative week"]
+        )
 
         # noinspection PyTypeChecker
         self.__weekly_change_df = pd.DataFrame.from_dict([monday_to_friday_positive_dict,
@@ -1210,6 +1256,8 @@ class PriceAnalysis:
         :return: vix change
         :rtype: float
         """
+        if vix_start == 0:
+            return 0
         vix_max = asset_data_selected_timeframe_df["VIX"].values.max()
         return 100. * (vix_max - vix_start) / vix_start
 

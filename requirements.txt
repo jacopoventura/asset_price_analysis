@@ -7,3 +7,4 @@ scipy
 plotly
 appdirs
 yfinance>=0.2.31b2
+pandas_datareader
