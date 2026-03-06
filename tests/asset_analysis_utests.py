@@ -240,6 +240,45 @@ class TestPriceAnalysisIntegration(unittest.TestCase):
         self.assertIn("Daily change according to VIX", html)
         self.assertTrue((analysis.get_price_history()["VIX"] == 0.0).all())
 
+    def test_weekly_conditional_stats_group_by_year_and_week(self):
+        analysis = PriceAnalysis("SPY", self.start, self.end, 23, self.output_dir, stats_vix=False)
+
+        week_2024_dates = pd.bdate_range("2024-01-08", periods=5)  # ISO week 2
+        week_2025_dates = pd.bdate_range("2025-01-06", periods=5)  # ISO week 2
+
+        week_2024 = pd.DataFrame(
+            {
+                "Date": [d.date() for d in week_2024_dates],
+                "Open": [100.0, 101.0, 102.0, 103.0, 104.0],
+                "Close": [101.0, 102.0, 103.0, 104.0, 105.0],  # positive week
+                "Low": [99.0, 100.0, 101.0, 102.0, 103.0],
+                "VIX": [15.0] * 5,
+            }
+        )
+        week_2025 = pd.DataFrame(
+            {
+                "Date": [d.date() for d in week_2025_dates],
+                "Open": [100.0, 101.0, 100.0, 99.0, 97.0],
+                "Close": [101.0, 100.0, 99.0, 98.0, 96.0],  # negative week, but Monday positive
+                "Low": [99.0, 99.0, 98.0, 97.0, 95.0],
+                "VIX": [18.0] * 5,
+            }
+        )
+
+        weekly_df = pd.concat([week_2024, week_2025], ignore_index=True)
+        weekly_df["Week number"] = [pd.Timestamp(day).isocalendar().week for day in weekly_df["Date"]]
+        weekly_df["Year"] = [day.year for day in weekly_df["Date"]]
+        # Mimic production ordering (most recent first)
+        weekly_df = weekly_df.sort_values("Date", ascending=False).reset_index(drop=True)
+
+        analysis._PriceAnalysis__price_history_df = weekly_df
+        analysis._PriceAnalysis__years_list = sorted(set(weekly_df["Year"]))
+        analysis._PriceAnalysis__calc_weekly_conditional_statistics()
+
+        conditional_df = analysis._PriceAnalysis__weekly_change_monday_conditional_df
+        self.assertEqual(50.0, float(conditional_df.loc["Week if Monday positive: positive", "frequency [%]"]))
+        self.assertEqual(50.0, float(conditional_df.loc["Week if Monday positive: negative", "frequency [%]"]))
+
 
 if __name__ == '__main__':
     unittest.main()

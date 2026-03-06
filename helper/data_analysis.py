@@ -1175,31 +1175,55 @@ class PriceAnalysis:
         return [int(np.min(self.__price_history_df.loc[self.__price_history_df["Year"] == year]["Week number"])),
                 int(np.max(self.__price_history_df.loc[self.__price_history_df["Year"] == year]["Week number"]))]
 
+    def __get_weekly_timeframes(self, min_days: int = 1) -> list[pd.DataFrame]:
+        """
+        Return weekly slices sorted in chronological order.
+        Grouping is done by (Year, Week number), then each week is sorted by date ascending.
+        :param min_days: minimum number of rows required to include a week
+        :type min_days: int
+        :return: list of weekly dataframes
+        :rtype: list
+        """
+
+        if self.__price_history_df is None or self.__price_history_df.empty:
+            return []
+
+        weekly_frames = []
+        grouped = self.__price_history_df.groupby(["Year", "Week number"], sort=False)
+        for _, week_df in grouped:
+            week_df_sorted = week_df.sort_values("Date", ascending=True)
+            if len(week_df_sorted) >= min_days:
+                weekly_frames.append(week_df_sorted)
+
+        weekly_frames.sort(key=lambda week_df: week_df["Date"].iloc[0])
+        return weekly_frames
+
     def __calc_weekly_if_monday(self):
         """
         Calculate the weekly change depending on Monday's (or first weekday) change.
         """
 
+        self.__weekly_change_first_day_positive = []
+        self.__weekly_change_first_day_negative = []
+        self.__weekly_change_first_day_positive_week_count = []
+        self.__weekly_change_first_day_negative_week_count = []
+
         week_counter = 0
-        for year in self.__years_list:
-            weeks_in_the_year = self.__calc_number_of_weeks_in_year(year)
-            for week_number in range(weeks_in_the_year[0], weeks_in_the_year[1] + 1):
-                week_counter += 1
-                # filter the selected week and the previous week
-                week_df = self.__price_history_df.loc[self.__price_history_df["Week number"] == week_number]
-                week_open = week_df["Open"].iloc[0]
-                week_close = week_df["Close"].iloc[-1]
-                first_day_change = 0
-                week_change = 0
-                if week_open != 0:
-                    week_change = 100.0 * (week_close - week_open) / week_open
-                    first_day_change = 100.0 * (week_df["Close"].iloc[0] - week_open) / week_open
-                if first_day_change > 0:
-                    self.__weekly_change_first_day_positive.append(week_change)
-                    self.__weekly_change_first_day_positive_week_count.append(week_counter)
-                else:
-                    self.__weekly_change_first_day_negative.append(week_change)
-                    self.__weekly_change_first_day_negative_week_count.append(week_counter)
+        for week_df in self.__get_weekly_timeframes(min_days=1):
+            week_counter += 1
+            week_open = week_df["Open"].iloc[0]
+            week_close = week_df["Close"].iloc[-1]
+            first_day_change = 0
+            week_change = 0
+            if week_open != 0:
+                week_change = 100.0 * (week_close - week_open) / week_open
+                first_day_change = 100.0 * (week_df["Close"].iloc[0] - week_open) / week_open
+            if first_day_change > 0:
+                self.__weekly_change_first_day_positive.append(week_change)
+                self.__weekly_change_first_day_positive_week_count.append(week_counter)
+            else:
+                self.__weekly_change_first_day_negative.append(week_change)
+                self.__weekly_change_first_day_negative_week_count.append(week_counter)
 
     @staticmethod
     def __calc_drawdown(asset_data_selected_timeframe_df: pd.DataFrame, price_open: float) -> float:
@@ -1243,24 +1267,20 @@ class PriceAnalysis:
                          "negative week": []}
         change_vix_dict = {"positive week": [],
                            "negative week": []}
-        for year in self.__years_list:
-            week_range_in_the_year = self.__calc_number_of_weeks_in_year(year)
-            for week_number in range(week_range_in_the_year[0], week_range_in_the_year[1] + 1):
-                # filter the selected week and the previous week
-                week_df = self.__price_history_df.loc[self.__price_history_df["Week number"] == week_number]
-                week_open = week_df["Open"].iloc[0]
-                week_close = week_df["Close"].iloc[-1]
-                vix_open = week_df["VIX"].iloc[0]
-                if week_close >= week_open:
-                    drawdown_dict["positive week"].append(self.__calc_drawdown(week_df, week_open))
-                    change_vix_dict["positive week"].append(self.__calc_max_change_vix(week_df, vix_open))
-                else:
-                    drawdown_dict["negative week"].append(self.__calc_drawdown(week_df, week_open))
-                    change_vix_dict["negative week"].append(self.__calc_max_change_vix(week_df, vix_open))
-                change = 0
-                if week_open != 0:
-                    change = 100.0 * (week_close - week_open) / week_open
-                change_monday_to_friday_list.append(change)
+        for week_df in self.__get_weekly_timeframes(min_days=2):
+            week_open = week_df["Open"].iloc[0]
+            week_close = week_df["Close"].iloc[-1]
+            vix_open = week_df["VIX"].iloc[0] if "VIX" in week_df else 0
+            if week_close >= week_open:
+                drawdown_dict["positive week"].append(self.__calc_drawdown(week_df, week_open))
+                change_vix_dict["positive week"].append(self.__calc_max_change_vix(week_df, vix_open))
+            else:
+                drawdown_dict["negative week"].append(self.__calc_drawdown(week_df, week_open))
+                change_vix_dict["negative week"].append(self.__calc_max_change_vix(week_df, vix_open))
+            change = 0
+            if week_open != 0:
+                change = 100.0 * (week_close - week_open) / week_open
+            change_monday_to_friday_list.append(change)
         return change_monday_to_friday_list, drawdown_dict, change_vix_dict
 
     def __calc_weekly_friday_to_friday_movement(self) -> tuple:
@@ -1276,27 +1296,27 @@ class PriceAnalysis:
                          "negative week": []}
         change_vix_dict = {"positive week": [],
                            "negative week": []}
-        for year in self.__years_list:
-            weeks_in_the_year = self.__calc_number_of_weeks_in_year(year)
-            for week_number in range(weeks_in_the_year[0] + 1, weeks_in_the_year[1] + 1):
-                # filter the selected week and the previous week
-                week_df = self.__price_history_df.loc[self.__price_history_df["Week number"] == week_number]
-                previous_week_df = self.__price_history_df.loc[
-                    self.__price_history_df["Week number"] == week_number - 1]
-                week_close = week_df["Close"].iloc[-1]
-                previous_week_close = previous_week_df["Close"].iloc[-1]
-                vix_open = previous_week_df["VIX"].iloc[-1]
-                if week_close >= previous_week_close:
-                    drawdown_dict["positive week"].append(self.__calc_drawdown(week_df, previous_week_close))
-                    change_vix_dict["positive week"].append(self.__calc_max_change_vix(week_df, vix_open))
-                else:
-                    drawdown_dict["negative week"].append(self.__calc_drawdown(week_df, previous_week_close))
-                    change_vix_dict["negative week"].append(self.__calc_max_change_vix(week_df, vix_open))
-                # calculate weekly changes
-                change = 0
-                if previous_week_close != 0:
-                    change = 100.0 * (week_close - previous_week_close) / previous_week_close
-                change_friday_to_friday_list.append(change)
+        weekly_frames = self.__get_weekly_timeframes(min_days=1)
+        for idx in range(1, len(weekly_frames)):
+            week_df = weekly_frames[idx]
+            # current week shall have at least 4 weekdays
+            if len(week_df) < 4:
+                continue
+            previous_week_df = weekly_frames[idx - 1]
+            week_close = week_df["Close"].iloc[-1]
+            previous_week_close = previous_week_df["Close"].iloc[-1]
+            vix_open = previous_week_df["VIX"].iloc[-1] if "VIX" in previous_week_df else 0
+            if week_close >= previous_week_close:
+                drawdown_dict["positive week"].append(self.__calc_drawdown(week_df, previous_week_close))
+                change_vix_dict["positive week"].append(self.__calc_max_change_vix(week_df, vix_open))
+            else:
+                drawdown_dict["negative week"].append(self.__calc_drawdown(week_df, previous_week_close))
+                change_vix_dict["negative week"].append(self.__calc_max_change_vix(week_df, vix_open))
+            # calculate weekly changes
+            change = 0
+            if previous_week_close != 0:
+                change = 100.0 * (week_close - previous_week_close) / previous_week_close
+            change_friday_to_friday_list.append(change)
         return change_friday_to_friday_list, drawdown_dict, change_vix_dict
 
     def __calc_change_DTE(self, dte: int) -> tuple:
