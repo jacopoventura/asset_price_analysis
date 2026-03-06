@@ -1014,10 +1014,15 @@ class PriceAnalysis:
         weekly_frames = self.__get_weekly_timeframes(min_days=1)
         week_id = list(range(1, len(weekly_frames) + 1))
         week_dates = []
+        week_max_vix = []
         for week_df in weekly_frames:
             first_day = week_df["Date"].iloc[0].strftime('%d/%m')
             last_day = week_df["Date"].iloc[-1].strftime('%d/%m - %Y')
             week_dates.append(first_day + "-" + last_day)
+            if "VIX" in week_df:
+                week_max_vix.append(float(np.max(week_df["VIX"])))
+            else:
+                week_max_vix.append(0.0)
         week_period_map = {week: period for week, period in zip(week_id, week_dates)}
 
         def get_periods(week_list: list) -> list:
@@ -1030,6 +1035,20 @@ class PriceAnalysis:
         for trace in fig.data:
             trace.hovertemplate = "Period: %{customdata}<br>Change: %{y:.2f}%<extra></extra>"
 
+        if week_max_vix and any(vix_value > 0 for vix_value in week_max_vix):
+            fig.add_trace(
+                go.Scatter(
+                    name='max VIX',
+                    x=week_id,
+                    y=week_max_vix,
+                    mode='lines',
+                    line=dict(color='royalblue', width=2),
+                    customdata=week_dates,
+                    hovertemplate="Period: %{customdata}<br>Max VIX: %{y:.2f}<extra></extra>",
+                    yaxis='y2'
+                )
+            )
+
         fig.update_layout(
             title="<b>Weekly change<b>",
             title_x=0.5,
@@ -1037,11 +1056,16 @@ class PriceAnalysis:
                 tickmode='array',
                 tickvals=week_id,
                 showticklabels=False
+            ),
+            yaxis2=dict(
+                title="max VIX",
+                overlaying='y',
+                side='right'
             )
         )
 
         # Change the bar mode
-        fig.update_yaxes(title_text="change [%]")
+        fig.update_layout(yaxis=dict(title_text="change [%]"))
         fig.update_xaxes(title_text="week")
 
         return fig
@@ -1060,6 +1084,14 @@ class PriceAnalysis:
 
         change_list = list(reversed(self.__change_list_monthly_dte_for_plot_df["change_list"]))
         date_range = list(reversed(self.__change_list_monthly_dte_for_plot_df["date range"]))
+        max_vix_list = list(
+            reversed(
+                self.__change_list_monthly_dte_for_plot_df.get(
+                    "max vix",
+                    self.__change_list_monthly_dte_for_plot_df.get("avg vix", [])
+                )
+            )
+        )
 
         for idx, (change, period) in enumerate(zip(change_list, date_range)):
             if change > 0:
@@ -1099,13 +1131,33 @@ class PriceAnalysis:
 
         # calculate statistics for negative change
         confidence_interval = self.__mean_confidence_interval(month_negative["change"])
+
+        if len(max_vix_list) == len(change_list) and any(vix_value > 0 for vix_value in max_vix_list):
+            fig.add_trace(
+                go.Scatter(
+                    name='max VIX',
+                    x=list(range(len(max_vix_list))),
+                    y=max_vix_list,
+                    mode='lines',
+                    line=dict(color='royalblue', width=2),
+                    customdata=date_range,
+                    hovertemplate="Period: %{customdata}<br>Max VIX: %{y:.2f}<extra></extra>",
+                    yaxis='y2'
+                )
+            )
+
         fig.update_layout(
             title="<b>" + str(self.__DTE_LONG) + " DTE change<b>",
-            title_x=0.5
+            title_x=0.5,
+            yaxis2=dict(
+                title="max VIX",
+                overlaying='y',
+                side='right'
+            )
         )
 
         # Change the bar mode
-        fig.update_yaxes(title_text="change [%]")
+        fig.update_layout(yaxis=dict(title_text="change [%]"))
         fig.update_xaxes(title_text="day")
 
         return fig, confidence_interval
@@ -1479,6 +1531,7 @@ class PriceAnalysis:
 
         change_list = [0] * (self.__number_of_trading_days - dte)
         date_range = [0] * (self.__number_of_trading_days - dte)
+        max_vix_list = [0] * (self.__number_of_trading_days - dte)
         # element 0 is the top of the dataframe (most recent date)
         # change is calculated as: (CLOSE(DTE)-CLOSE(today)) / CLOSE(today)
         # to_list to speed-up the loop over the dataframe
@@ -1512,7 +1565,8 @@ class PriceAnalysis:
                     change_vix_dict["negative week"].append(vix_increase_max)
             change_list[idx - dte] = change
             date_range[idx - dte] = date_list[idx].strftime('%d/%m - ') + date_list[idx - dte].strftime('%d/%m/%Y')
-        return {"change_list": change_list, "date range": date_range}, drawdown_dict, change_vix_dict
+            max_vix_list[idx - dte] = float(max_vix)
+        return {"change_list": change_list, "date range": date_range, "max vix": max_vix_list}, drawdown_dict, change_vix_dict
 
     @staticmethod
     def __calc_positive_negative_change_lists(change_list: list) -> tuple:

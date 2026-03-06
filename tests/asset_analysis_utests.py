@@ -568,6 +568,21 @@ class TestPriceAnalysisIntegration(unittest.TestCase):
         self.assertEqual(len(first_trace.x), len(first_trace.customdata))
         self.assertIn("-", first_trace.customdata[0])
 
+    def test_weekly_plot_includes_max_vix_line(self):
+        analysis = PriceAnalysis("SPY", self.start, self.end, 23, self.output_dir, stats_vix=False)
+        history_df = build_monotonic_bull_history_df(periods=40)
+        analysis._PriceAnalysis__price_history_df = history_df.copy()
+        analysis._PriceAnalysis__number_of_trading_days = len(history_df)
+        analysis._PriceAnalysis__calc_weekly_conditional_statistics()
+
+        fig = analysis._PriceAnalysis__make_plot_weekly_change()
+
+        max_vix_trace = next(trace for trace in fig.data if trace.name == "max VIX")
+        self.assertEqual("y2", max_vix_trace.yaxis)
+        self.assertEqual("max VIX", fig.layout.yaxis2.title.text)
+        self.assertIn("Max VIX: %{y:.2f}", max_vix_trace.hovertemplate)
+        self.assertGreater(len(max_vix_trace.x), 0)
+
     def test_monthly_plot_does_not_use_dense_date_tick_labels(self):
         analysis = PriceAnalysis("SPY", self.start, self.end, 23, self.output_dir, stats_vix=False)
         analysis._PriceAnalysis__change_list_monthly_dte_for_plot_df = {
@@ -594,6 +609,22 @@ class TestPriceAnalysisIntegration(unittest.TestCase):
         self.assertEqual([0, 1, 2], list(positive_trace.x))
         self.assertEqual(["oldest", "middle", "recent"], list(positive_trace.customdata))
         self.assertIn("Period: %{customdata}", positive_trace.hovertemplate)
+
+    def test_monthly_plot_includes_max_vix_line_when_available(self):
+        analysis = PriceAnalysis("SPY", self.start, self.end, 23, self.output_dir, stats_vix=False)
+        analysis._PriceAnalysis__change_list_monthly_dte_for_plot_df = {
+            "change_list": [1.0, -0.5, 0.8],
+            "date range": ["recent", "middle", "oldest"],
+            "max vix": [24.0, 22.0, 20.0],
+        }
+
+        fig, _ = analysis._PriceAnalysis__make_plot_monthly_change()
+
+        max_vix_trace = next(trace for trace in fig.data if trace.name == "max VIX")
+        self.assertEqual("y2", max_vix_trace.yaxis)
+        self.assertEqual("max VIX", fig.layout.yaxis2.title.text)
+        self.assertEqual(["oldest", "middle", "recent"], list(max_vix_trace.customdata))
+        self.assertIn("Max VIX: %{y:.2f}", max_vix_trace.hovertemplate)
 
     def test_run_generates_html_report_with_mocked_data(self):
         asset_df = build_asset_history_df()
