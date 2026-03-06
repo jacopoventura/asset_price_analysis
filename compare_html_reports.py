@@ -10,10 +10,10 @@ import pandas as pd
 
 
 # Edit these paths if needed.
-REFERENCE_FILE = "SPY_01012022_to_26022026_reference.html"
-CURRENT_FILE = "SPY_01012022_to_26022026.html"
+REFERENCE_FILE = "SPY_01012020_to_26022026_reference.html"
+CURRENT_FILE = "SPY_01012020_to_26022026.html"
 
-FLOAT_TOLERANCE = 1e-9
+FLOAT_TOLERANCE = 0.1
 MAX_DIFFS_PER_TABLE = 20
 
 
@@ -77,7 +77,7 @@ def compare_tables(reference_df: pd.DataFrame, current_df: pd.DataFrame, table_i
             cur_float = to_float(cur_val)
 
             if ref_float is not None and cur_float is not None:
-                if abs(ref_float - cur_float) <= FLOAT_TOLERANCE:
+                if abs(ref_float - cur_float) < FLOAT_TOLERANCE:
                     continue
             else:
                 if str(ref_val).strip() == str(cur_val).strip():

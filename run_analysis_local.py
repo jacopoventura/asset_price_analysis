@@ -10,7 +10,7 @@ from yfinance.exceptions import YFRateLimitError
 
 # Edit these values directly.
 TICKER = "SPY"
-START_DATE = dt.datetime(2022, 1, 1)
+START_DATE = dt.datetime(2020, 1, 1)
 END_DATE = dt.datetime(2026, 2, 26)
 DTE_LONG = 23
 OUTPUT_DIR = "."
