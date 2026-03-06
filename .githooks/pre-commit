@@ -1,0 +1,39 @@
+#!/bin/sh
+set -eu
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+if [ -x "./venv/bin/python" ]; then
+  PYTHON="./venv/bin/python"
+else
+  PYTHON="python3"
+fi
+
+echo "[pre-commit] Running unit tests..."
+"$PYTHON" -m unittest discover -s tests -p "*.py"
+
+echo "[pre-commit] Running pylint..."
+PY_FILES="$(git ls-files '*.py')"
+
+if [ -z "$PY_FILES" ]; then
+  echo "[pre-commit] No Python files to lint."
+  exit 0
+fi
+
+if ! PYLINT_OUTPUT=$("$PYTHON" -m pylint --exit-zero $PY_FILES 2>&1); then
+  echo "$PYLINT_OUTPUT"
+  echo "[pre-commit] pylint execution failed."
+  exit 1
+fi
+
+echo "$PYLINT_OUTPUT"
+
+PYLINT_SCORE="$(printf '%s\n' "$PYLINT_OUTPUT" | awk '/rated at/{for(i=1;i<=NF;i++){if($i ~ /\/10$/){print $i}}}' | tail -n 1)"
+if [ -n "$PYLINT_SCORE" ]; then
+  echo "[pre-commit] pylint score: $PYLINT_SCORE"
+else
+  echo "[pre-commit] pylint score not found in output."
+fi
+
+echo "[pre-commit] checks complete."
