@@ -1,8 +1,23 @@
 # Copyright (c) 2024 Jacopo Ventura
 
+import datetime
+import math
+import os
+import sys
 from pathlib import Path
 
 import appdirs as ad
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+from scipy.stats import t
+import streamlit as st
+import yfinance as yf
+
+try:
+    from pandas_datareader import data as web
+except Exception:
+    web = None
 
 CACHE_DIR = ".cache"
 
@@ -12,23 +27,6 @@ ad.user_cache_dir = lambda *args: CACHE_DIR
 # Create the cache dir if it doesn't exist
 Path(CACHE_DIR).mkdir(exist_ok=True)
 
-import yfinance as yf
-import math
-import numpy as np
-import os
-import pandas as pd
-try:
-    from pandas_datareader import data as web
-except Exception:
-    web = None
-import plotly.graph_objects as go
-import sys
-
-import datetime
-from scipy.stats import t
-
-import streamlit as st
-
 
 class PriceAnalysis:
     """
@@ -36,8 +34,8 @@ class PriceAnalysis:
     """
 
     def __init__(self, ticker: str,
-                 start: datetime,
-                 end: datetime,
+                 start: datetime.datetime,
+                 end: datetime.datetime,
                  dte_long: int,
                  path_to_report: str,
                  stats_vix: bool = True,
@@ -56,7 +54,7 @@ class PriceAnalysis:
         :type path_to_report: str
         :param stats_vix: query vix data or not
         :type stats_vix: bool
-        :param do_plot: plot graphs in the html file
+        :param do_plot: plot graphs in the HTML file
         :type do_plot: false
         """
 
@@ -87,7 +85,7 @@ class PriceAnalysis:
         self.__date_start = start
         self.__date_end = end
         self.__number_of_days = (end - start).days
-        if self.__number_of_days < np.ceil( (self.__DTE_LONG / 5) * 7):
+        if self.__number_of_days < np.ceil((self.__DTE_LONG / 5) * 7):
             st.error(f'Incorrect input dates. Minimum {self.__DTE_LONG} trading days shall be considered.', icon="🚨")
             sys.exit(1)
 
@@ -177,7 +175,7 @@ class PriceAnalysis:
         # Step 5: calculate gap-ups and -downs statistics
         self.__calc_stats_gapup_down()
 
-        # Step 5: make html report
+        # Step 5: make HTML report
         self.__write_html()
         print("Report written in: " + self.FILENAME)
 
@@ -355,7 +353,7 @@ class PriceAnalysis:
                 self.__stats_negative_gap[str(gap) + " %"][str(int(close_pct * 10) / 10) + "%"] = cpf[idx]
 
         # above the max gap considered in the list
-        close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if daily_open_pct[i] < gap_positive_list[-1]]
+        close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if daily_open_pct[i] < gap_negative_list[-1]]
         gap = gap_negative_list[-1]
         key = ">" + str(gap) + " %"
         self.__stats_negative_gap[">+" + str(gap) + " %"] = {"gap": key}
@@ -422,7 +420,7 @@ class PriceAnalysis:
 
         return dict_cumulative_dist
 
-    def update_analysis_period(self, start: datetime, end: datetime):
+    def update_analysis_period(self, start: datetime.datetime, end: datetime.datetime):
         """
         Update the time period for the analysis.
         :param start: start date for the price analysis
@@ -477,7 +475,7 @@ class PriceAnalysis:
 
         self.__SOURCE = source_used
 
-        #except ValueError:
+        # except ValueError:
         #    st.error('Cannot query historical data')
         #    sys.exit(1)  # stop the main function with exit code 1
 
@@ -641,7 +639,8 @@ class PriceAnalysis:
                 fo.write('<br/><br/>')
                 fo.write("<center><b>Daily and weekly change stats</b></center>")
                 fo.write(
-                    "<br/>The tables in this sections contain the <b>cumulative probability</b> of the change in price up to a certain level (column).")
+                    "<br/>The tables in this sections contain the <b>cumulative probability</b> "
+                    "of the change in price up to a certain level (column).")
                 fo.write('<br/>' + '<br/>' + "Daily change (CLOSE with respect to the previous day CLOSE)")
                 fo.write('<br/>')
                 fo.write(df_to_html_1_decimal(self.__daily_change_df))

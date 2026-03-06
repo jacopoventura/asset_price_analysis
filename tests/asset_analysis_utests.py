@@ -3,6 +3,7 @@
 import unittest
 import datetime
 import re
+import pandas as pd
 from helper.data_analysis import PriceAnalysis
 
 dataset = {
@@ -75,6 +76,31 @@ class TestCumulativeProbability(unittest.TestCase):
             key = str(int(pct * 10) / 10) + "% change"
             self.assertIn(key, cpf)
             self.assertEqual(0.0, cpf[key])
+
+    def test_gapdown_beyond_max_gap_bucket_uses_negative_threshold(self):
+        analysis = PriceAnalysis("SPY", start, end, dte, "/tmp/")
+        analysis._PriceAnalysis__price_history_df = pd.DataFrame(
+            {
+                # No value is below -2.5, but several are below +2.5.
+                "Open wrt close": [-1.0, -0.5, 0.4, 2.0],
+                "Close wrt close": [-1.2, -0.2, 0.3, -0.4],
+            }
+        )
+
+        analysis._PriceAnalysis__calc_stats_gapup_down()
+
+        beyond_key = f">+{-analysis._PriceAnalysis__MAX_GAP} %"
+        beyond_bucket = analysis._PriceAnalysis__stats_negative_gap[beyond_key]
+        no_data = analysis._PriceAnalysis__NO__DATA_INDICATOR
+
+        value_keys = [key for key in beyond_bucket.keys() if key != "gap"]
+        self.assertGreater(len(value_keys), 0)
+        for key in value_keys:
+            self.assertEqual(
+                no_data,
+                beyond_bucket[key],
+                msg=f"Expected no data for {key}, got {beyond_bucket[key]!r}",
+            )
 
 
 if __name__ == '__main__':
