@@ -116,9 +116,18 @@ class PriceAnalysis:
         self.__daily_change_df = None
         self.__weekly_change_monday_to_friday = None
         self.__weekly_change_friday_to_friday = None
+        self.__weekly_change_monday_to_friday_count_weeks = 0
+        self.__weekly_change_friday_to_friday_count_weeks = 0
+        self.__weekly_change_monday_to_friday_count_days = 0
+        self.__weekly_change_friday_to_friday_count_days = 0
+        self.__weekly_if_monday_positive_count_weeks = 0
+        self.__weekly_if_monday_negative_count_weeks = 0
+        self.__weekly_if_monday_positive_count_days = 0
+        self.__weekly_if_monday_negative_count_days = 0
         self.__weekly_change_df = None
         self.__weekly_change_monday_conditional_df = None
         self.__weekly_short_dte_change_df = None
+        self.__weekly_short_dte_change_vix_regime_dfs = {}
         self.__monthly_dte_change_df = None
         self.__change_list_monthly_dte_for_plot_df = None
         self.__day_gapup_df = None
@@ -169,6 +178,10 @@ class PriceAnalysis:
         if self.__number_of_trading_days >= self.__WEEK_TRADING_DAYS:
             self.__weekly_short_dte_change_df = self.__calc_DTE_statistics(self.__WEEK_TRADING_DAYS,
                                                                            self.__WEEK_MAX_CHANGE_PCT)
+            self.__weekly_short_dte_change_vix_regime_dfs = self.__calc_DTE_statistics_by_vix_regime(
+                self.__WEEK_TRADING_DAYS,
+                self.__WEEK_MAX_CHANGE_PCT,
+            )
 
         # Step 4: calculate monthly statistics
         if self.__number_of_trading_days >= self.__DTE_LONG:
@@ -258,12 +271,12 @@ class PriceAnalysis:
             min_close_negative_open = float(np.min(close_negative_open))
             max_close_negative_open = float(np.max(close_negative_open))
             x_cpf_negative_open = []
-            x = math.ceil(max_close_negative_open * self.__BIN_CLOSE_PCT) / self.__BIN_CLOSE_PCT - self.__BIN_CLOSE_PCT
-            while x > min_close_negative_open:
+            x = math.floor(min_close_negative_open * self.__BIN_CLOSE_PCT) / self.__BIN_CLOSE_PCT + self.__BIN_CLOSE_PCT
+            while x < max_close_negative_open:
                 x_cpf_negative_open.append(x)
-                x -= self.__BIN_CLOSE_PCT
-            if len(x_cpf_negative_open) == 0 or x_cpf_negative_open[-1] != min_close_negative_open:
-                x_cpf_negative_open.append(min_close_negative_open)
+                x += self.__BIN_CLOSE_PCT
+            if len(x_cpf_negative_open) == 0 or x_cpf_negative_open[-1] != max_close_negative_open:
+                x_cpf_negative_open.append(max_close_negative_open)
 
         gap_positive_list = []
         gap_negative_list = []
@@ -316,7 +329,7 @@ class PriceAnalysis:
             key = "[" + str(gap) + "; " + str(gap - self.__STEP_GAP_OPEN) + "[%"
             self.__stats_negative_gap[str(gap) + " %"] = {"gap": key, "count days": len(close_list)}
             if close_list:
-                cpf = self.__calc_cpf([-i for i in close_list], [-i for i in x_cpf_negative_open])
+                cpf = self.__calc_cpf(close_list, x_cpf_negative_open)
             else:
                 cpf = [self.__NO__DATA_INDICATOR]*len(x_cpf_negative_open)
             for idx, close_pct in enumerate(x_cpf_negative_open):
@@ -328,7 +341,7 @@ class PriceAnalysis:
         key = ">" + str(gap) + " %"
         self.__stats_negative_gap[">+" + str(gap) + " %"] = {"gap": key, "count days": len(close_list)}
         if close_list:
-            cpf = self.__calc_cpf([-i for i in close_list], [-i for i in x_cpf_negative_open])
+            cpf = self.__calc_cpf(close_list, x_cpf_negative_open)
         else:
             cpf = [self.__NO__DATA_INDICATOR] * len(x_cpf_negative_open)
         for idx, close_pct in enumerate(x_cpf_negative_open):
@@ -339,7 +352,7 @@ class PriceAnalysis:
         key = "negative open %"
         self.__stats_negative_gap[">0 %"] = {"gap": key, "count days": len(close_list)}
         if close_list:
-            cpf = self.__calc_cpf([-i for i in close_list], [-i for i in x_cpf_negative_open])
+            cpf = self.__calc_cpf(close_list, x_cpf_negative_open)
         else:
             cpf = [self.__NO__DATA_INDICATOR] * len(x_cpf_negative_open)
         for idx, close_pct in enumerate(x_cpf_negative_open):
@@ -688,14 +701,98 @@ class PriceAnalysis:
             self.__dict_daily_change_vix_bins[vix_key]["cumulative negative"]["VIX"] = vix_labels_by_bin[vix_key]
             self.__dict_daily_change_vix_bins[vix_key]["cumulative positive"]["VIX"] = vix_labels_by_bin[vix_key]
 
+    @staticmethod
+    def __append_total_count_days_row(df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Append a summary row with the total count of days when the table contains
+        a "count days" column.
+        """
+
+        if "count days" not in df.columns:
+            return df
+
+        output_df = df.copy()
+        total_count_days = pd.to_numeric(output_df["count days"], errors="coerce").fillna(0).sum()
+        total_row = {column: 0 for column in output_df.columns}
+        total_row["count days"] = total_count_days
+
+        row_label = "Total count days"
+        while row_label in output_df.index:
+            row_label += " "
+        output_df.loc[row_label] = total_row
+        return output_df
+
+    @staticmethod
+    def __get_total_count_days(df: pd.DataFrame) -> float:
+        """
+        Return total count days if present in the table, else 0.
+        """
+
+        if "count days" not in df.columns:
+            return 0
+        return pd.to_numeric(df["count days"], errors="coerce").fillna(0).sum()
+
+    @staticmethod
+    def __parse_pct_column(column_name: str) -> float | None:
+        """
+        Parse a percentage-like column name (e.g. "-1.5%") to float.
+        """
+
+        text = str(column_name).strip()
+        if not text.endswith("%"):
+            return None
+        try:
+            return float(text[:-1])
+        except ValueError:
+            return None
+
+    def __trim_gap_table_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Trim leading negative-change columns that have 0 cumulative probability
+        for all rows. Keep table starting from the first negative column where at
+        least one row has cumulative probability > 0.
+        """
+
+        if df.empty:
+            return df
+
+        negative_pct_columns = [
+            column for column in df.columns
+            if (self.__parse_pct_column(column) is not None and self.__parse_pct_column(column) < 0)
+        ]
+        if not negative_pct_columns:
+            return df
+
+        first_negative_column_with_positive_cdf = None
+        for column in negative_pct_columns:
+            values = pd.to_numeric(df[column], errors="coerce").fillna(0)
+            if (values > 0).any():
+                first_negative_column_with_positive_cdf = column
+                break
+
+        if first_negative_column_with_positive_cdf is None:
+            return df
+
+        start_idx = list(df.columns).index(first_negative_column_with_positive_cdf)
+        keep_columns = []
+        for fixed_column in ["gap", "count days"]:
+            if fixed_column in df.columns:
+                keep_columns.append(fixed_column)
+        for column in list(df.columns)[start_idx:]:
+            if self.__parse_pct_column(column) is not None:
+                keep_columns.append(column)
+
+        return df[keep_columns]
+
     def __write_html(self):
         """
         Write output file with all the statistics.
         """
 
         try:
-            def df_to_html_1_decimal(df: pd.DataFrame) -> str:
-                return df.to_html(float_format=lambda x: f"{x:.1f}").replace('<td>', '<td align="center">')
+            def df_to_html_1_decimal(df: pd.DataFrame, include_total_row: bool = True) -> str:
+                output_df = self.__append_total_count_days_row(df) if include_total_row else df
+                return output_df.to_html(float_format=lambda x: f"{x:.1f}").replace('<td>', '<td align="center">')
 
             with open(os.path.expanduser(self.FILENAME), 'w') as fo:
                 fo.write("<html>\n<head>\n<title> \nOutput Data in an HTML file \
@@ -716,14 +813,40 @@ class PriceAnalysis:
                 fo.write(
                     "<br/>The tables in this sections contain the <b>cumulative probability</b> "
                     "of the change in price up to a certain level (column).")
-                fo.write('<br/>' + '<br/>' + "Daily change (CLOSE with respect to the previous day CLOSE)")
+                daily_total_count_days = int(self.__get_total_count_days(self.__daily_change_df))
+                fo.write('<br/>' + '<br/>' + "Daily change (CLOSE with respect to the previous day CLOSE)"
+                         + " - total count days: " + str(daily_total_count_days))
                 fo.write('<br/>')
-                fo.write(df_to_html_1_decimal(self.__daily_change_df))
-                fo.write('<br/>' + '<br/>' + "Weekly change (Friday CLOSE with respect to the previous week Friday CLOSE or Monday OPEN)")
+                fo.write(df_to_html_1_decimal(self.__daily_change_df, include_total_row=False))
+                friday_to_friday_count_weeks = int(self.__weekly_change_friday_to_friday_count_weeks)
+                monday_to_friday_count_weeks = int(self.__weekly_change_monday_to_friday_count_weeks)
+                friday_to_friday_days = int(self.__weekly_change_friday_to_friday_count_days)
+                monday_to_friday_days = int(self.__weekly_change_monday_to_friday_count_days)
+                fo.write('<br/>' + '<br/>' + "Weekly change (Friday CLOSE with respect to the previous week Friday CLOSE or Monday OPEN)"
+                         + "<br/>Friday to Friday: " + str(friday_to_friday_count_weeks) + " weeks ("
+                         + str(friday_to_friday_days) + " days)"
+                         + "<br/>Monday to Friday: " + str(monday_to_friday_count_weeks) + " weeks ("
+                         + str(monday_to_friday_days) + " days)")
                 fo.write('<br/>')
                 fo.write(df_to_html_1_decimal(self.__weekly_change_df))
+                fo.write("<br/>Note: frequency sums to 100% for Monday to Friday, and 100% for Friday to Friday. "
+                         "The two are treated separately.")
                 fo.write('<br/>')
-                fo.write(df_to_html_1_decimal(self.__weekly_change_monday_conditional_df))
+                monday_positive_count_weeks = int(self.__weekly_if_monday_positive_count_weeks)
+                monday_negative_count_weeks = int(self.__weekly_if_monday_negative_count_weeks)
+                monday_positive_count_days = int(self.__weekly_if_monday_positive_count_days)
+                monday_negative_count_days = int(self.__weekly_if_monday_negative_count_days)
+                monday_total_count_weeks = monday_positive_count_weeks + monday_negative_count_weeks
+                monday_total_count_days = monday_positive_count_days + monday_negative_count_days
+                fo.write("<br/>Week if Monday positive/negative sample size:")
+                fo.write("<br/>Monday positive: " + str(monday_positive_count_weeks) + " weeks ("
+                         + str(monday_positive_count_days) + " days)")
+                fo.write("<br/>Monday negative: " + str(monday_negative_count_weeks) + " weeks ("
+                         + str(monday_negative_count_days) + " days)")
+                fo.write("<br/>Total: " + str(monday_total_count_weeks) + " weeks ("
+                         + str(monday_total_count_days) + " days)")
+                fo.write('<br/>')
+                fo.write(df_to_html_1_decimal(self.__weekly_change_monday_conditional_df, include_total_row=False))
                 fo.write('<br/>')
 
                 # ================================= DTE STATS ===================================
@@ -732,19 +855,32 @@ class PriceAnalysis:
                 fo.write('<br/>')
                 if self.__weekly_short_dte_change_df is not None:
                     fo.write('<br/>')
-                    fo.write("Short DTE (open the position every day close and close at the DTE closing price)")
+                    fo.write("Short DTE: position opened at any day's close and closed at the DTE close")
                     fo.write(df_to_html_1_decimal(self.__weekly_short_dte_change_df))
+                    if self.__weekly_short_dte_change_vix_regime_dfs:
+                        total_regime_count_days = 0
+                        for regime_df in self.__weekly_short_dte_change_vix_regime_dfs.values():
+                            total_regime_count_days += int(self.__get_total_count_days(regime_df))
+                        fo.write('<br/><br/>')
+                        fo.write("Short DTE change according to VIX regime (VIX at position opening)")
+                        fo.write("<br/>Total count days: " + str(total_regime_count_days))
+                        for regime, regime_df in self.__weekly_short_dte_change_vix_regime_dfs.items():
+                            regime_total_count_days = int(self.__get_total_count_days(regime_df))
+                            fo.write('<br/><br/><b>' + regime + "</b> - total count days: "
+                                     + str(regime_total_count_days))
+                            fo.write(df_to_html_1_decimal(regime_df, include_total_row=False))
 
                 # monthly dte
                 figure_dte_change = None
                 if self.__monthly_dte_change_df is not None:
+                    last_open_idx = min(self.__DTE_LONG, self.__number_of_trading_days - 1)
+                    last_open_date = self.__price_history_df["Date"][last_open_idx].strftime('%d/%m/%Y')
                     fo.write('<br/>' + '<br/>' + "Change in " + str(self.__DTE_LONG))
                     fo.write(" DTE (effective trading days, (open the position every day close and close at the DTE closing price)")
                     fo.write("<br>" + str(self.__number_of_trading_days) + " analyzed days (last OPEN ")
-                    fo.write(self.__price_history_df["Date"][self.__number_of_trading_days - self.__DTE_LONG].strftime(
-                        '%d/%m/%Y') + ")")
+                    fo.write(last_open_date + ")")
                     fo.write('<br/>')
-                    fo.write(df_to_html_1_decimal(self.__monthly_dte_change_df))
+                    fo.write(df_to_html_1_decimal(self.__monthly_dte_change_df, include_total_row=False))
                     figure_dte_change, negative_change_stats = self.__make_plot_monthly_change()
                     fo.write('Stats ' + str(self.__DTE_LONG) + ' DTE negative change:')
                     fo.write('<br/>')
@@ -768,10 +904,12 @@ class PriceAnalysis:
                 fo.write('<br/>')
                 fo.write("<br/><b>Cumulative probability of the daily change</b> when a <u>positive market opening</u> occurs:")
                 fo.write('<br/><br/>')
+                gap_up_total_count_days = int(self.__stats_positive_gap[">0 %"]["count days"]) \
+                    if ">0 %" in self.__stats_positive_gap else 0
+                fo.write("<br/>Total count days (positive market opening): " + str(gap_up_total_count_days))
                 gap_up_df = pd.DataFrame([self.__stats_positive_gap[i] for i in self.__stats_positive_gap.keys()])
-                gap_up_df.set_index("gap", inplace=True)
-                # gap_up_df.index.name = None
-                fo.write(df_to_html_1_decimal(gap_up_df))
+                gap_up_df = self.__trim_gap_table_columns(gap_up_df)
+                fo.write(df_to_html_1_decimal(gap_up_df, include_total_row=False))
                 fo.write("<b>HOW TO USE THE TABLE:</b>")
                 fo.write("<br/> - row index: range of the opening gap-up")
                 fo.write("<br/> - column: daily change [%] (close with respect to the previous day's close)")
@@ -781,10 +919,12 @@ class PriceAnalysis:
                 fo.write('<br/><br/>')
                 fo.write("<br/><b>Cumulative probability of the daily change</b> when a <u>negative market opening</u> occurs:")
                 fo.write('<br/><br/>')
+                gap_down_total_count_days = int(self.__stats_negative_gap[">0 %"]["count days"]) \
+                    if ">0 %" in self.__stats_negative_gap else 0
+                fo.write("<br/>Total count days (negative market opening): " + str(gap_down_total_count_days))
                 gap_down_df = pd.DataFrame([self.__stats_negative_gap[i] for i in self.__stats_negative_gap.keys()])
-                gap_down_df.set_index("gap", inplace=True)
-                # gap_down_df.index.name = None
-                fo.write(df_to_html_1_decimal(gap_down_df))
+                gap_down_df = self.__trim_gap_table_columns(gap_down_df)
+                fo.write(df_to_html_1_decimal(gap_down_df, include_total_row=False))
                 fo.write("<b>HOW TO USE THE TABLE:</b>")
                 fo.write("<br/> - row index: range of the opening gap-down")
                 fo.write("<br/> - column: daily change [%] (close with respect to the previous day's close)")
@@ -795,25 +935,31 @@ class PriceAnalysis:
                 fo.write('<br/><br/><br/>')
                 fo.write("<center><b>Daily change according to VIX</b></center>")
                 fo.write('<br/>')
-                fo.write("<br/><b>Cumulative probability</b> of the <b>daily NEGATIVE change</b> according to the <u>vix level</u>:")
                 negative_day_vix_df = pd.DataFrame([self.__dict_daily_change_vix_bins[i]["cumulative negative"] for i in
                                                     self.__dict_daily_change_vix_bins.keys()])
                 negative_day_vix_df.set_index("VIX", inplace=True)
                 # negative_day_vix_df.index.name = None
                 negative_day_vix_df = negative_day_vix_df.fillna(0)
-                fo.write(df_to_html_1_decimal(negative_day_vix_df))
+                positive_day_vix_df = pd.DataFrame([self.__dict_daily_change_vix_bins[i]["cumulative positive"] for i in
+                                                    self.__dict_daily_change_vix_bins.keys()])
+                positive_day_vix_df.set_index("VIX", inplace=True)
+                # positive_day_vix_df.index.name = None
+                positive_day_vix_df = positive_day_vix_df.fillna(0)
+                negative_vix_count_days = int(self.__get_total_count_days(negative_day_vix_df))
+                positive_vix_count_days = int(self.__get_total_count_days(positive_day_vix_df))
+                total_vix_count_days = negative_vix_count_days + positive_vix_count_days
+                fo.write("<br/>Total count days across the two VIX tables: " + str(total_vix_count_days))
+                fo.write("<br/><b>Cumulative probability</b> of the <b>daily NEGATIVE change</b> according to the <u>vix level</u>:")
+                fo.write("<br/>Total count days (daily NEGATIVE change): " + str(negative_vix_count_days))
+                fo.write(df_to_html_1_decimal(negative_day_vix_df, include_total_row=False))
                 fo.write("<b>HOW TO USE THE TABLE:</b>")
                 fo.write("<br/> - row index: range of the VIX")
                 fo.write("<br/> - column: daily change [%] (close with respect to the previous day's close)")
                 fo.write("<br/> - cell: <u>cumulative probability [%]</u> that the close is <b>lower or equal</b> the change in the column header")
                 fo.write('<br/>')
                 fo.write("<br/><b>Cumulative probability</b> of the <b>daily POSITIVE change</b> according to the <u>vix level</u>:")
-                positive_day_vix_df = pd.DataFrame([self.__dict_daily_change_vix_bins[i]["cumulative positive"] for i in
-                                                    self.__dict_daily_change_vix_bins.keys()])
-                positive_day_vix_df.set_index("VIX", inplace=True)
-                # positive_day_vix_df.index.name = None
-                positive_day_vix_df = positive_day_vix_df.fillna(0)
-                fo.write(df_to_html_1_decimal(positive_day_vix_df))
+                fo.write("<br/>Total count days (daily POSITIVE change): " + str(positive_vix_count_days))
+                fo.write(df_to_html_1_decimal(positive_day_vix_df, include_total_row=False))
                 fo.write("<b>HOW TO USE THE TABLE:</b>")
                 fo.write("<br/> - row index: range of the VIX")
                 fo.write("<br/> - column: daily change [%] (close with respect to the previous day's close)")
@@ -834,26 +980,51 @@ class PriceAnalysis:
         st.write(f"Data source: asset={self.__SOURCE}, vix={self.__VIX_SOURCE}")
         st.write(f"The tables in this section contain the **cumulative probability** of the change in price up to a certain level (column).")
 
-        # Daily and weekly stats
-        st.write("Daily movements (**close** with respect to previous day **close**)")
-        st.dataframe(self.__daily_change_df.style.format('{:,.1f}'))
+        def print_df(df: pd.DataFrame, include_total_row: bool = True) -> None:
+            output_df = self.__append_total_count_days_row(df) if include_total_row else df
+            st.dataframe(output_df.style.format('{:,.1f}'))
 
+        # Daily and weekly stats
+        daily_total_count_days = int(self.__get_total_count_days(self.__daily_change_df))
+        st.write("Daily movements (**close** with respect to previous day **close**) "
+                 f"- total count days: {daily_total_count_days}")
+        print_df(self.__daily_change_df, include_total_row=False)
+
+        friday_to_friday_count_weeks = int(self.__weekly_change_friday_to_friday_count_weeks)
+        monday_to_friday_count_weeks = int(self.__weekly_change_monday_to_friday_count_weeks)
+        friday_to_friday_days = int(self.__weekly_change_friday_to_friday_count_days)
+        monday_to_friday_days = int(self.__weekly_change_monday_to_friday_count_days)
         st.write("Weekly movements (**Friday close** with respect to the previous week **Friday close** or **Monday open**)")
-        st.dataframe(self.__weekly_change_df.style.format('{:,.1f}'))
-        st.dataframe(self.__weekly_change_monday_conditional_df.style.format('{:,.1f}'))
+        st.write(f"Friday to Friday: {friday_to_friday_count_weeks} weeks ({friday_to_friday_days} days)")
+        st.write(f"Monday to Friday: {monday_to_friday_count_weeks} weeks ({monday_to_friday_days} days)")
+        print_df(self.__weekly_change_df)
+        st.write("Note: frequency sums to 100% for Monday to Friday, and 100% for Friday to Friday. "
+                 "The two are treated separately.")
+        monday_positive_count_weeks = int(self.__weekly_if_monday_positive_count_weeks)
+        monday_negative_count_weeks = int(self.__weekly_if_monday_negative_count_weeks)
+        monday_positive_count_days = int(self.__weekly_if_monday_positive_count_days)
+        monday_negative_count_days = int(self.__weekly_if_monday_negative_count_days)
+        monday_total_count_weeks = monday_positive_count_weeks + monday_negative_count_weeks
+        monday_total_count_days = monday_positive_count_days + monday_negative_count_days
+        st.write("Week if Monday positive/negative sample size:")
+        st.write(f"Monday positive: {monday_positive_count_weeks} weeks ({monday_positive_count_days} days)")
+        st.write(f"Monday negative: {monday_negative_count_weeks} weeks ({monday_negative_count_days} days)")
+        st.write(f"Total: {monday_total_count_weeks} weeks ({monday_total_count_days} days)")
+        print_df(self.__weekly_change_monday_conditional_df, include_total_row=False)
 
         if self.__weekly_short_dte_change_df is not None:
-            st.write("Short DTE movements (open the position at every day close and close at the DTE closing price).")
-            st.dataframe(self.__weekly_short_dte_change_df.style.format('{:,.1f}'))
+            st.write("Short DTE movements: position opened at any day's close and closed at the DTE close.")
+            print_df(self.__weekly_short_dte_change_df)
 
         # Monthly (dte-based) stats
         if self.__monthly_dte_change_df is not None:
+            last_open_idx = min(self.__DTE_LONG, self.__number_of_trading_days - 1)
+            last_open_date = self.__price_history_df["Date"][last_open_idx].strftime('%d/%m/%Y')
             st.write("Long DTE movements: price change (close to close) in " + str(self.__DTE_LONG) + " trading days. " +
-                     str(self.__number_of_trading_days) + " analyzed days. Last: " + self.__price_history_df["Date"][
-                         self.__number_of_trading_days - self.__DTE_LONG].strftime(
-                        '%d/%m/%Y') + ". Open the position at every day close and close at the DTE closing price.")
+                     str(self.__number_of_trading_days) + " analyzed days. Last: " + last_open_date
+                     + ". Open the position at every day close and close at the DTE closing price.")
 
-            st.dataframe(self.__monthly_dte_change_df.style.format('{:,.1f}'))
+            print_df(self.__monthly_dte_change_df, include_total_row=False)
 
         # Gap up / down analysis
         st.write(" ")
@@ -871,10 +1042,13 @@ class PriceAnalysis:
             for k in col.keys():
                 if k != 'gap' and isinstance(col[k], str):
                     self.__stats_positive_gap[key][k] = 0
+        gap_up_total_count_days = int(self.__stats_positive_gap[">0 %"]["count days"]) \
+            if ">0 %" in self.__stats_positive_gap else 0
+        st.write(f"Total count days (positive market opening): {gap_up_total_count_days}")
         gap_up_df = pd.DataFrame([self.__stats_positive_gap[i] for i in self.__stats_positive_gap.keys()])
-        gap_up_df.set_index("gap", inplace=True)
         gap_up_df.fillna(0)
-        st.dataframe(gap_up_df.style.format('{:,.1f}'))
+        gap_up_df = self.__trim_gap_table_columns(gap_up_df)
+        print_df(gap_up_df, include_total_row=False)
         st.write("HOW TO USE THE TABLE:")
         st.write("- row index: range of the opening gap-up")
         st.write("- column: daily change [%] (close with respect to the previous day's close)")
@@ -891,10 +1065,13 @@ class PriceAnalysis:
             for k in col.keys():
                 if k != 'gap' and isinstance(col[k], str):
                     self.__stats_negative_gap[key][k] = 0
+        gap_down_total_count_days = int(self.__stats_negative_gap[">0 %"]["count days"]) \
+            if ">0 %" in self.__stats_negative_gap else 0
+        st.write(f"Total count days (negative market opening): {gap_down_total_count_days}")
         gap_down_df = pd.DataFrame([self.__stats_negative_gap[i] for i in self.__stats_negative_gap.keys()])
-        gap_down_df.set_index("gap", inplace=True)
         gap_down_df.fillna(0)
-        st.dataframe(gap_down_df.style.format('{:,.1f}'))
+        gap_down_df = self.__trim_gap_table_columns(gap_down_df)
+        print_df(gap_down_df, include_total_row=False)
         st.write("HOW TO USE THE TABLE:")
         st.write("- row index: range of the opening gap-down")
         st.write("- column: daily change [%] (close with respect to the previous day's close")
@@ -922,7 +1099,16 @@ class PriceAnalysis:
                                             self.__dict_daily_change_vix_bins.keys()])
         negative_day_vix_df.set_index("VIX", inplace=True)
         negative_day_vix_df = negative_day_vix_df.fillna(0)
-        st.dataframe(negative_day_vix_df.style.format('{:,.1f}'))
+        positive_day_vix_df = pd.DataFrame([self.__dict_daily_change_vix_bins[i]["cumulative positive"] for i in
+                                            self.__dict_daily_change_vix_bins.keys()])
+        positive_day_vix_df.set_index("VIX", inplace=True)
+        positive_day_vix_df = positive_day_vix_df.fillna(0)
+        negative_vix_count_days = int(self.__get_total_count_days(negative_day_vix_df))
+        positive_vix_count_days = int(self.__get_total_count_days(positive_day_vix_df))
+        total_vix_count_days = negative_vix_count_days + positive_vix_count_days
+        st.write(f"Total count days across the two VIX tables: {total_vix_count_days}")
+        st.write(f"Total count days (daily NEGATIVE change): {negative_vix_count_days}")
+        print_df(negative_day_vix_df, include_total_row=False)
         st.write("HOW TO USE THE TABLE:")
         st.write("- row index: range of the VIX")
         st.write("- column: daily change [%] (close with respect to the previous day's close")
@@ -931,11 +1117,8 @@ class PriceAnalysis:
         st.write(" ")
         st.write(" ")
         st.write("Daily POSITIVE change according to the vix level:")
-        positive_day_vix_df = pd.DataFrame([self.__dict_daily_change_vix_bins[i]["cumulative positive"] for i in
-                                            self.__dict_daily_change_vix_bins.keys()])
-        positive_day_vix_df.set_index("VIX", inplace=True)
-        positive_day_vix_df = positive_day_vix_df.fillna(0)
-        st.dataframe(positive_day_vix_df.style.format('{:,.1f}'))
+        st.write(f"Total count days (daily POSITIVE change): {positive_vix_count_days}")
+        print_df(positive_day_vix_df, include_total_row=False)
         st.write("HOW TO USE THE TABLE:")
         st.write("- row index: range of the VIX")
         st.write("- column: daily change [%] (close with respect to the previous day's close)")
@@ -1202,6 +1385,55 @@ class PriceAnalysis:
                 mean - standard_error * t_crit,
                 mean + standard_error * t_crit]
 
+    def __build_dte_stats_dataframe(self,
+                                    dte: int,
+                                    max_change_pct: float,
+                                    change_list: list,
+                                    drawdown_list: list,
+                                    vix_increment_list: list) -> pd.DataFrame:
+        """
+        Build a DTE stats dataframe from per-trade observations.
+        """
+
+        change_positive, change_negative = self.__calc_distribution(change_list, max_change_pct, self.__STEP)
+
+        positive_drawdown_list = [drawdown for change, drawdown in zip(change_list, drawdown_list) if change >= 0]
+        negative_drawdown_list = [drawdown for change, drawdown in zip(change_list, drawdown_list) if change < 0]
+        positive_vix_increment_list = [
+            vix_increment for change, vix_increment in zip(change_list, vix_increment_list) if change >= 0
+        ]
+        negative_vix_increment_list = [
+            vix_increment for change, vix_increment in zip(change_list, vix_increment_list) if change < 0
+        ]
+
+        if positive_drawdown_list:
+            change_positive["Max drawdown [%]"] = np.min(positive_drawdown_list)
+        else:
+            change_positive["Max drawdown [%]"] = 0
+
+        if negative_drawdown_list:
+            change_negative["Max drawdown [%]"] = np.min(negative_drawdown_list)
+        else:
+            change_negative["Max drawdown [%]"] = 0
+
+        if positive_vix_increment_list:
+            change_positive["Max VIX increment [%]"] = np.max(positive_vix_increment_list)
+        else:
+            change_positive["Max VIX increment [%]"] = 0
+
+        if negative_vix_increment_list:
+            change_negative["Max VIX increment [%]"] = np.max(negative_vix_increment_list)
+        else:
+            change_negative["Max VIX increment [%]"] = 0
+
+        change_positive["Case"] = str(int(dte)) + "DTE: positive"
+        change_negative["Case"] = str(int(dte)) + "DTE: negative"
+        # noinspection PyTypeChecker
+        change_df = pd.DataFrame.from_dict([change_positive, change_negative])
+        change_df.set_index("Case", inplace=True)
+        change_df.index.name = None
+        return change_df
+
     def __calc_DTE_statistics(self, dte: int, max_change_pct: float) -> pd.DataFrame:
         """
         Calculate statistics given for any day given a DTE.
@@ -1213,38 +1445,55 @@ class PriceAnalysis:
         :rtype: pd.DataFrame
         """
 
-        change_list_df, drawdown_dict, vix_change_dict = self.__calc_change_DTE(dte)
+        change_list_df, _, _ = self.__calc_change_DTE(dte)
         if dte == self.__DTE_LONG:
             self.__change_list_monthly_dte_for_plot_df = change_list_df
+        return self.__build_dte_stats_dataframe(
+            dte,
+            max_change_pct,
+            change_list_df["change_list"],
+            change_list_df["drawdown_list"],
+            change_list_df["vix_increment_list"],
+        )
+
+    def __calc_DTE_statistics_by_vix_regime(self, dte: int, max_change_pct: float) -> dict[str, pd.DataFrame]:
+        """
+        Calculate DTE statistics conditioned on VIX at position opening.
+        """
+
+        change_list_df, _, _ = self.__calc_change_DTE(dte)
         change_list = change_list_df["change_list"]
-        change_positive, change_negative = self.__calc_distribution(change_list, max_change_pct, self.__STEP)
-        if len(drawdown_dict["positive week"]) > 0:
-            change_positive["Max drawdown [%]"] = np.min(drawdown_dict["positive week"])
-        else:
-            change_positive["Max drawdown [%]"] = 0
+        drawdown_list = change_list_df["drawdown_list"]
+        vix_increment_list = change_list_df["vix_increment_list"]
+        open_vix_list = change_list_df["open_vix_list"]
 
-        if len(drawdown_dict["negative week"]) > 0:
-            change_negative["Max drawdown [%]"] = np.min(drawdown_dict["negative week"])
-        else:
-            change_negative["Max drawdown [%]"] = 0
+        regimes = {
+            "Low volatility (VIX < 20)": lambda vix: vix < 20,
+            "Medium volatility (20 <= VIX < 27)": lambda vix: 20 <= vix < 27,
+            "High volatility (VIX >= 27)": lambda vix: vix >= 27,
+        }
 
-        if len(vix_change_dict["positive week"]) > 0:
-            change_positive["Max VIX increment [%]"] = np.max(vix_change_dict["positive week"])
-        else:
-            change_positive["Max VIX increment [%]"] = 0
+        regime_dfs = {}
+        for regime_label, is_in_regime in regimes.items():
+            regime_changes = []
+            regime_drawdowns = []
+            regime_vix_increments = []
+            for change, drawdown, vix_increment, open_vix in zip(
+                    change_list, drawdown_list, vix_increment_list, open_vix_list):
+                if is_in_regime(open_vix):
+                    regime_changes.append(change)
+                    regime_drawdowns.append(drawdown)
+                    regime_vix_increments.append(vix_increment)
 
-        if len(vix_change_dict["negative week"]) > 0:
-            change_negative["Max VIX increment [%]"] = np.max(vix_change_dict["negative week"])
-        else:
-            change_negative["Max VIX increment [%]"] = 0
+            regime_dfs[regime_label] = self.__build_dte_stats_dataframe(
+                dte,
+                max_change_pct,
+                regime_changes,
+                regime_drawdowns,
+                regime_vix_increments,
+            )
 
-        change_positive["Case"] = str(int(dte)) + "DTE: positive"
-        change_negative["Case"] = str(int(dte)) + "DTE: negative"
-        # noinspection PyTypeChecker
-        change_df = pd.DataFrame.from_dict([change_positive, change_negative])
-        change_df.set_index("Case", inplace=True)
-        change_df.index.name = None
-        return change_df
+        return regime_dfs
 
     def __calc_day_change_wrt_previous_day(self):
         """
@@ -1274,6 +1523,7 @@ class PriceAnalysis:
         # Monday to Friday (first to last week days)
         weekly_change_monday_to_friday, weekly_change_monday_to_friday_drawdown_dict, weekly_change_monday_to_friday_vix_change_dict = (
             self.__calc_weekly_movement())
+        self.__weekly_change_monday_to_friday_count_weeks = len(weekly_change_monday_to_friday)
         monday_to_friday_positive_dict, monday_to_friday_negative_dict = self.__calc_distribution(
             weekly_change_monday_to_friday,
             self.__WEEK_MAX_CHANGE_PCT,
@@ -1284,6 +1534,7 @@ class PriceAnalysis:
         # Friday to friday (last to last week days)
         weekly_change_friday_to_friday, weekly_change_friday_to_friday_drawdown_dict, weekly_change_friday_to_friday_vix_change_dict = (
             self.__calc_weekly_friday_to_friday_movement())
+        self.__weekly_change_friday_to_friday_count_weeks = len(weekly_change_friday_to_friday)
         friday_to_friday_positive_dict, friday_to_friday_negative_dict = self.__calc_distribution(
             weekly_change_friday_to_friday,
             self.__WEEK_MAX_CHANGE_PCT,
@@ -1335,6 +1586,7 @@ class PriceAnalysis:
                                                           friday_to_friday_negative_dict])
         self.__weekly_change_df.set_index("Case", inplace=True)
         self.__weekly_change_df.index.name = None
+        self.__weekly_change_df.rename(columns={"count days": "count weeks"}, inplace=True)
 
     def __calc_weekly_conditional_statistics(self):
         """
@@ -1358,6 +1610,7 @@ class PriceAnalysis:
                                                                              weekly_negative_if_monday_negative_dict])
         self.__weekly_change_monday_conditional_df.set_index("Case", inplace=True)
         self.__weekly_change_monday_conditional_df.index.name = None
+        self.__weekly_change_monday_conditional_df.rename(columns={"count days": "count weeks"}, inplace=True)
 
     def __calc_number_of_weeks_in_year(self, year: int) -> list:
         """
@@ -1403,6 +1656,10 @@ class PriceAnalysis:
         self.__weekly_change_first_day_negative = []
         self.__weekly_change_first_day_positive_week_count = []
         self.__weekly_change_first_day_negative_week_count = []
+        self.__weekly_if_monday_positive_count_weeks = 0
+        self.__weekly_if_monday_negative_count_weeks = 0
+        self.__weekly_if_monday_positive_count_days = 0
+        self.__weekly_if_monday_negative_count_days = 0
 
         week_counter = 0
         for week_df in self.__get_weekly_timeframes(min_days=1):
@@ -1417,9 +1674,13 @@ class PriceAnalysis:
             if first_day_change > 0:
                 self.__weekly_change_first_day_positive.append(week_change)
                 self.__weekly_change_first_day_positive_week_count.append(week_counter)
+                self.__weekly_if_monday_positive_count_weeks += 1
+                self.__weekly_if_monday_positive_count_days += len(week_df)
             else:
                 self.__weekly_change_first_day_negative.append(week_change)
                 self.__weekly_change_first_day_negative_week_count.append(week_counter)
+                self.__weekly_if_monday_negative_count_weeks += 1
+                self.__weekly_if_monday_negative_count_days += len(week_df)
 
     @staticmethod
     def __calc_drawdown(asset_data_selected_timeframe_df: pd.DataFrame, price_open: float) -> float:
@@ -1459,11 +1720,13 @@ class PriceAnalysis:
         """
 
         change_monday_to_friday_list = []
+        analyzed_days = 0
         drawdown_dict = {"positive week": [],
                          "negative week": []}
         change_vix_dict = {"positive week": [],
                            "negative week": []}
         for week_df in self.__get_weekly_timeframes(min_days=2):
+            analyzed_days += len(week_df)
             week_open = week_df["Open"].iloc[0]
             week_close = week_df["Close"].iloc[-1]
             vix_open = week_df["VIX"].iloc[0] if "VIX" in week_df else 0
@@ -1477,6 +1740,7 @@ class PriceAnalysis:
             if week_open != 0:
                 change = 100.0 * (week_close - week_open) / week_open
             change_monday_to_friday_list.append(change)
+        self.__weekly_change_monday_to_friday_count_days = analyzed_days
         return change_monday_to_friday_list, drawdown_dict, change_vix_dict
 
     def __calc_weekly_friday_to_friday_movement(self) -> tuple:
@@ -1488,6 +1752,7 @@ class PriceAnalysis:
         """
 
         change_friday_to_friday_list = []
+        analyzed_days = 0
         drawdown_dict = {"positive week": [],
                          "negative week": []}
         change_vix_dict = {"positive week": [],
@@ -1498,6 +1763,7 @@ class PriceAnalysis:
             # current week shall have at least 4 weekdays
             if len(week_df) < 4:
                 continue
+            analyzed_days += len(week_df)
             previous_week_df = weekly_frames[idx - 1]
             week_close = week_df["Close"].iloc[-1]
             previous_week_close = previous_week_df["Close"].iloc[-1]
@@ -1513,6 +1779,7 @@ class PriceAnalysis:
             if previous_week_close != 0:
                 change = 100.0 * (week_close - previous_week_close) / previous_week_close
             change_friday_to_friday_list.append(change)
+        self.__weekly_change_friday_to_friday_count_days = analyzed_days
         return change_friday_to_friday_list, drawdown_dict, change_vix_dict
 
     def __calc_change_DTE(self, dte: int) -> tuple:
@@ -1532,6 +1799,9 @@ class PriceAnalysis:
         change_list = [0] * (self.__number_of_trading_days - dte)
         date_range = [0] * (self.__number_of_trading_days - dte)
         max_vix_list = [0] * (self.__number_of_trading_days - dte)
+        drawdown_list = [0] * (self.__number_of_trading_days - dte)
+        vix_increment_list = [0] * (self.__number_of_trading_days - dte)
+        open_vix_list = [0] * (self.__number_of_trading_days - dte)
         # element 0 is the top of the dataframe (most recent date)
         # change is calculated as: (CLOSE(DTE)-CLOSE(today)) / CLOSE(today)
         # to_list to speed-up the loop over the dataframe
@@ -1564,9 +1834,19 @@ class PriceAnalysis:
                     drawdown_dict["negative week"].append(drawdown)
                     change_vix_dict["negative week"].append(vix_increase_max)
             change_list[idx - dte] = change
+            drawdown_list[idx - dte] = drawdown
+            vix_increment_list[idx - dte] = float(vix_increase_max)
+            open_vix_list[idx - dte] = float(vix_open)
             date_range[idx - dte] = date_list[idx].strftime('%d/%m - ') + date_list[idx - dte].strftime('%d/%m/%Y')
             max_vix_list[idx - dte] = float(max_vix)
-        return {"change_list": change_list, "date range": date_range, "max vix": max_vix_list}, drawdown_dict, change_vix_dict
+        return {
+            "change_list": change_list,
+            "date range": date_range,
+            "max vix": max_vix_list,
+            "drawdown_list": drawdown_list,
+            "vix_increment_list": vix_increment_list,
+            "open_vix_list": open_vix_list,
+        }, drawdown_dict, change_vix_dict
 
     @staticmethod
     def __calc_positive_negative_change_lists(change_list: list) -> tuple:

@@ -239,6 +239,26 @@ class TestCumulativeProbability(unittest.TestCase):
         self.assertGreater(len([k for k in sample_negative_row if k != "gap"]), 0)
         self.assertGreater(len([k for k in sample_positive_row if k != "gap"]), 0)
 
+    def test_gapdown_cumulative_probability_uses_lower_or_equal_threshold(self):
+        analysis = PriceAnalysis("SPY", start, end, dte, "/tmp/")
+        # All observations are in the first negative-gap bucket (-0.25, 0.0),
+        # with close changes chosen to make <= thresholds easy to verify.
+        analysis._PriceAnalysis__price_history_df = pd.DataFrame(
+            {
+                "Open wrt close": [-0.1, -0.1, -0.1, -0.1],
+                "Close wrt close": [-2.0, -1.0, 0.0, 1.0],
+            }
+        )
+
+        analysis._PriceAnalysis__calc_stats_gapup_down()
+
+        first_negative_gap_bucket = analysis._PriceAnalysis__stats_negative_gap["-0.25 %"]
+        self.assertEqual(4, int(first_negative_gap_bucket["count days"]))
+        # P(close <= -1.0) = 2/4 = 50%
+        self.assertEqual(50.0, float(first_negative_gap_bucket["-1.0%"]))
+        # P(close <= 0.0) = 3/4 = 75%
+        self.assertEqual(75.0, float(first_negative_gap_bucket["0.0%"]))
+
     def test_data_sanity_check_handles_nan_on_date_column(self):
         analysis = PriceAnalysis("SPY", start, end, dte, "/tmp/")
         analysis._PriceAnalysis__price_history_df = pd.DataFrame(
@@ -253,6 +273,27 @@ class TestCumulativeProbability(unittest.TestCase):
 
         nan_dates = analysis.data_sanity_check()
         self.assertEqual(1, len(nan_dates))
+
+    def test_trim_gap_table_columns_starts_from_first_negative_with_positive_cdf(self):
+        analysis = PriceAnalysis("SPY", start, end, dte, "/tmp/")
+        gap_df = pd.DataFrame(
+            {
+                "gap": ["]0.0; 0.25]%", "]0.25; 0.5]%"],
+                "count days": [10, 8],
+                "-3.0%": [0.0, 0.0],
+                "-2.5%": [0.0, 12.5],
+                "-2.0%": [10.0, 25.0],
+                "-1.5%": [20.0, 30.0],
+                "0.0%": [50.0, 60.0],
+            }
+        )
+
+        trimmed_df = analysis._PriceAnalysis__trim_gap_table_columns(gap_df)
+
+        self.assertIn("gap", trimmed_df.columns)
+        self.assertIn("count days", trimmed_df.columns)
+        self.assertNotIn("-3.0%", trimmed_df.columns)
+        self.assertEqual("-2.5%", trimmed_df.columns[2])
 
 
 class TestPriceAnalysisIntegration(unittest.TestCase):
@@ -524,6 +565,37 @@ class TestPriceAnalysisIntegration(unittest.TestCase):
         for change in change_list_df["change_list"]:
             self.assertGreater(change, 0.0)
 
+    def test_short_dte_vix_regime_stats_split_counts_correctly(self):
+        analysis = PriceAnalysis("SPY", self.start, self.end, 5, self.output_dir, stats_vix=True)
+        dates_desc = [day.date() for day in pd.bdate_range("2024-01-01", periods=10)[::-1]]
+        analysis._PriceAnalysis__price_history_df = pd.DataFrame(
+            {
+                "Date": dates_desc,
+                "Close": [100.0] * 10,
+                "Low": [99.0] * 10,
+                "VIX": [0.0, 0.0, 0.0, 0.0, 0.0, 28.0, 26.0, 20.0, 19.0, 10.0],
+            }
+        )
+        analysis._PriceAnalysis__number_of_trading_days = 10
+
+        regime_dfs = analysis._PriceAnalysis__calc_DTE_statistics_by_vix_regime(5, 6)
+        low_df = regime_dfs["Low volatility (VIX < 20)"]
+        medium_df = regime_dfs["Medium volatility (20 <= VIX < 27)"]
+        high_df = regime_dfs["High volatility (VIX >= 27)"]
+
+        self.assertEqual(2, int(low_df.loc["5DTE: positive", "count days"]))
+        self.assertEqual(2, int(medium_df.loc["5DTE: positive", "count days"]))
+        self.assertEqual(1, int(high_df.loc["5DTE: positive", "count days"]))
+        self.assertEqual(0, int(low_df.loc["5DTE: negative", "count days"]))
+        self.assertEqual(0, int(medium_df.loc["5DTE: negative", "count days"]))
+        self.assertEqual(0, int(high_df.loc["5DTE: negative", "count days"]))
+
+        total_regime_count_days = 0
+        for regime_df in regime_dfs.values():
+            total_regime_count_days += int(regime_df.loc["5DTE: positive", "count days"])
+            total_regime_count_days += int(regime_df.loc["5DTE: negative", "count days"])
+        self.assertEqual(5, total_regime_count_days)
+
     def test_time_direction_consistency_across_metrics(self):
         analysis = PriceAnalysis("SPY", self.start, self.end, 23, self.output_dir, stats_vix=False)
         history_df = build_monotonic_bull_history_df(periods=40)
@@ -640,12 +712,43 @@ class TestPriceAnalysisIntegration(unittest.TestCase):
         self.assertIn("Daily and weekly change stats", html)
         self.assertIn("Open gap-up / down analysis", html)
         self.assertIn("Daily change according to VIX", html)
+        self.assertIn("Total count days", html)
+        self.assertIn("Daily change (CLOSE with respect to the previous day CLOSE) - total count days:", html)
+        self.assertIn("Weekly change (Friday CLOSE with respect to the previous week Friday CLOSE or Monday OPEN)", html)
+        self.assertIn("Friday to Friday:", html)
+        self.assertIn("Monday to Friday:", html)
+        self.assertIn("Note: frequency sums to 100% for Monday to Friday, and 100% for Friday to Friday. "
+                      "The two are treated separately.", html)
+        self.assertIn("Week if Monday positive/negative sample size:", html)
+        self.assertIn("Monday positive:", html)
+        self.assertIn("Monday negative:", html)
+        self.assertIn("Total count days (positive market opening):", html)
+        self.assertIn("Total count days (negative market opening):", html)
+        daily_section = html.split(
+            "Daily change (CLOSE with respect to the previous day CLOSE) - total count days:"
+        )[1].split(
+            "Weekly change (Friday CLOSE with respect to the previous week Friday CLOSE or Monday OPEN)"
+        )[0]
+        self.assertNotIn("Total count days", daily_section)
+        monday_conditional_section = html.split(
+            "Week if Monday positive/negative sample size:"
+        )[1].split(
+            "<center><b>Price change analysis with different DTEs</b></center>"
+        )[0]
+        self.assertNotIn("Total count days", monday_conditional_section)
+        gap_section = html.split(
+            "<center><b>Open gap-up / down analysis</b></center>"
+        )[1].split(
+            "<center><b>Daily change according to VIX</b></center>"
+        )[0]
+        self.assertNotIn("Total count days</td>", gap_section)
         self.assertIn("Asset data source: yahoo", html)
         self.assertIn("VIX data source: disabled", html)
         self.assertEqual("disabled", analysis.get_vix_source())
         self.assertTrue((analysis.get_price_history()["VIX"] == 0.0).all())
         self.assertIn("count days", analysis._PriceAnalysis__daily_change_df.columns)
-        self.assertIn("count days", analysis._PriceAnalysis__weekly_change_df.columns)
+        self.assertIn("count weeks", analysis._PriceAnalysis__weekly_change_df.columns)
+        self.assertIn("count weeks", analysis._PriceAnalysis__weekly_change_monday_conditional_df.columns)
         if analysis._PriceAnalysis__monthly_dte_change_df is not None:
             self.assertIn("count days", analysis._PriceAnalysis__monthly_dte_change_df.columns)
         self.assertEqual(
@@ -685,6 +788,14 @@ class TestPriceAnalysisIntegration(unittest.TestCase):
         self.assertIn(f"Change in {custom_dte} DTE", html)
         self.assertIn(f"Stats {custom_dte} DTE negative change", html)
         self.assertNotIn("Change in 23 DTE", html)
+        expected_last_open_date = analysis.get_price_history()["Date"][custom_dte].strftime('%d/%m/%Y')
+        self.assertIn(f"last OPEN {expected_last_open_date}", html)
+        monthly_section = html.split(
+            f"Change in {custom_dte} DTE"
+        )[1].split(
+            f"Stats {custom_dte} DTE negative change"
+        )[0]
+        self.assertNotIn("Total count days", monthly_section)
         self.assertIn("count days", analysis._PriceAnalysis__monthly_dte_change_df.columns)
 
     def test_run_generates_html_report_with_plots_enabled(self):
@@ -720,6 +831,10 @@ class TestPriceAnalysisIntegration(unittest.TestCase):
 
         self.assertIn("Asset data source: yahoo", html)
         self.assertIn("VIX data source: yahoo_download (^VIX)", html)
+        self.assertIn("Short DTE change according to VIX regime", html)
+        self.assertIn("Low volatility (VIX < 20)", html)
+        self.assertIn("Medium volatility (20 <= VIX < 27)", html)
+        self.assertIn("High volatility (VIX >= 27)", html)
         self.assertEqual("yahoo_download (^VIX)", analysis.get_vix_source())
 
     def test_weekly_conditional_stats_group_by_year_and_week(self):
