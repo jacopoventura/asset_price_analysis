@@ -1,6 +1,7 @@
 # Copyright (c) 2024 Jacopo Ventura
 
 import datetime
+import json
 import math
 import os
 import sys
@@ -127,7 +128,11 @@ class PriceAnalysis:
         self.__weekly_change_df = None
         self.__weekly_change_monday_conditional_df = None
         self.__weekly_short_dte_change_df = None
+        self.__weekly_short_dte_change_dfs = {}
         self.__weekly_short_dte_change_vix_regime_dfs = {}
+        self.__weekly_short_dte_change_low_vix_threshold_dfs = {}
+        self.__weekly_short_dte_change_medium_vix_upper_threshold_dfs = {}
+        self.__weekly_short_dte_change_high_vix_threshold_dfs = {}
         self.__monthly_dte_change_df = None
         self.__change_list_monthly_dte_for_plot_df = None
         self.__day_gapup_df = None
@@ -176,11 +181,34 @@ class PriceAnalysis:
         self.__calc_weekly_statistics()
         self.__calc_weekly_conditional_statistics()
         if self.__number_of_trading_days >= self.__WEEK_TRADING_DAYS:
-            self.__weekly_short_dte_change_df = self.__calc_DTE_statistics(self.__WEEK_TRADING_DAYS,
-                                                                           self.__WEEK_MAX_CHANGE_PCT)
+            max_short_dte = min(self.__WEEK_TRADING_DAYS, self.__number_of_trading_days - 1)
+            short_dte_values = list(range(1, max_short_dte + 1))
+            self.__weekly_short_dte_change_dfs = self.__calc_DTE_statistics_for_dte_values(
+                short_dte_values,
+                self.__WEEK_MAX_CHANGE_PCT,
+            )
+            default_short_dte = self.__WEEK_TRADING_DAYS if self.__WEEK_TRADING_DAYS in self.__weekly_short_dte_change_dfs else max_short_dte
+            self.__weekly_short_dte_change_df = self.__weekly_short_dte_change_dfs.get(default_short_dte)
             self.__weekly_short_dte_change_vix_regime_dfs = self.__calc_DTE_statistics_by_vix_regime(
                 self.__WEEK_TRADING_DAYS,
                 self.__WEEK_MAX_CHANGE_PCT,
+            )
+            self.__weekly_short_dte_change_low_vix_threshold_dfs = self.__calc_DTE_statistics_low_vix_threshold(
+                self.__WEEK_TRADING_DAYS,
+                self.__WEEK_MAX_CHANGE_PCT,
+                list(range(10, 41)),
+            )
+            self.__weekly_short_dte_change_medium_vix_upper_threshold_dfs = (
+                self.__calc_DTE_statistics_medium_vix_upper_threshold(
+                    self.__WEEK_TRADING_DAYS,
+                    self.__WEEK_MAX_CHANGE_PCT,
+                    list(range(21, 46)),
+                )
+            )
+            self.__weekly_short_dte_change_high_vix_threshold_dfs = self.__calc_DTE_statistics_high_vix_threshold(
+                self.__WEEK_TRADING_DAYS,
+                self.__WEEK_MAX_CHANGE_PCT,
+                list(range(20, 41)),
             )
 
         # Step 4: calculate monthly statistics
@@ -856,7 +884,60 @@ class PriceAnalysis:
                 if self.__weekly_short_dte_change_df is not None:
                     fo.write('<br/>')
                     fo.write("Short DTE: position opened at any day's close and closed at the DTE close")
-                    fo.write(df_to_html_1_decimal(self.__weekly_short_dte_change_df))
+                    short_dte_change_dfs = self.__weekly_short_dte_change_dfs
+                    if short_dte_change_dfs:
+                        default_short_dte = (
+                            self.__WEEK_TRADING_DAYS
+                            if self.__WEEK_TRADING_DAYS in short_dte_change_dfs
+                            else sorted(short_dte_change_dfs.keys())[-1]
+                        )
+                        short_dte_table_payload = {}
+                        for dte, dte_df in sorted(short_dte_change_dfs.items()):
+                            short_dte_table_payload[str(dte)] = {
+                                "total_count_days": int(self.__get_total_count_days(dte_df)),
+                                "table_html": df_to_html_1_decimal(dte_df, include_total_row=False),
+                            }
+
+                        fo.write("<br/>Select DTE: <select id='short-dte-select'>")
+                        for dte in sorted(short_dte_change_dfs.keys()):
+                            selected = " selected" if dte == default_short_dte else ""
+                            fo.write(f"<option value='{dte}'{selected}>{dte}</option>")
+                        fo.write("</select>")
+                        default_total_count_days = int(
+                            short_dte_table_payload[str(default_short_dte)]["total_count_days"]
+                        )
+                        fo.write("<br/><span id='short-dte-total-count'>"
+                                 f"Total count days: {default_total_count_days}</span>")
+                        fo.write("<div id='short-dte-table-container'>")
+                        fo.write(df_to_html_1_decimal(short_dte_change_dfs[default_short_dte], include_total_row=False))
+                        fo.write("</div>")
+                        fo.write("<script id='short-dte-table-payload' type='application/json'>")
+                        fo.write(json.dumps(short_dte_table_payload))
+                        fo.write("</script>")
+                        fo.write("<script>")
+                        fo.write("(function(){"
+                                 "const selector=document.getElementById('short-dte-select');"
+                                 "const payloadNode=document.getElementById('short-dte-table-payload');"
+                                 "if(!selector || !payloadNode){return;}"
+                                 "let tablePayloadByDte={};"
+                                 "try{tablePayloadByDte=JSON.parse(payloadNode.textContent || '{}');}"
+                                 "catch(_error){return;}"
+                                 "const updateShortDteTable=function(){"
+                                 "const payload=tablePayloadByDte[selector.value];"
+                                 "if(!payload){return;}"
+                                 "const total=document.getElementById('short-dte-total-count');"
+                                 "if(total){total.textContent='Total count days: ' + payload.total_count_days;}"
+                                 "const tableContainer=document.getElementById('short-dte-table-container');"
+                                 "if(tableContainer){tableContainer.innerHTML=payload.table_html;}"
+                                 "};"
+                                 "selector.addEventListener('change', updateShortDteTable);"
+                                 "updateShortDteTable();"
+                                 "})();")
+                        fo.write("</script>")
+                    else:
+                        short_dte_total_count_days = int(self.__get_total_count_days(self.__weekly_short_dte_change_df))
+                        fo.write("<br/>Total count days: " + str(short_dte_total_count_days))
+                        fo.write(df_to_html_1_decimal(self.__weekly_short_dte_change_df, include_total_row=False))
                     if self.__weekly_short_dte_change_vix_regime_dfs:
                         total_regime_count_days = 0
                         for regime_df in self.__weekly_short_dte_change_vix_regime_dfs.values():
@@ -864,11 +945,170 @@ class PriceAnalysis:
                         fo.write('<br/><br/>')
                         fo.write("Short DTE change according to VIX regime (VIX at position opening)")
                         fo.write("<br/>Total count days: " + str(total_regime_count_days))
-                        for regime, regime_df in self.__weekly_short_dte_change_vix_regime_dfs.items():
-                            regime_total_count_days = int(self.__get_total_count_days(regime_df))
-                            fo.write('<br/><br/><b>' + regime + "</b> - total count days: "
-                                     + str(regime_total_count_days))
-                            fo.write(df_to_html_1_decimal(regime_df, include_total_row=False))
+
+                        low_vix_threshold_dfs = self.__weekly_short_dte_change_low_vix_threshold_dfs
+                        if low_vix_threshold_dfs:
+                            default_low_vix_threshold = 20 if 20 in low_vix_threshold_dfs else sorted(low_vix_threshold_dfs.keys())[0]
+                            low_vix_table_payload = {}
+                            for threshold, threshold_df in sorted(low_vix_threshold_dfs.items()):
+                                low_vix_table_payload[str(threshold)] = {
+                                    "total_count_days": int(self.__get_total_count_days(threshold_df)),
+                                    "table_html": df_to_html_1_decimal(threshold_df, include_total_row=False),
+                                }
+
+                            fo.write('<br/><br/><b>Low volatility (VIX < selected threshold)</b>')
+                            fo.write("<br/>Select low-volatility VIX threshold: "
+                                     "<select id='low-vix-threshold-select'>")
+                            for threshold in sorted(low_vix_threshold_dfs.keys()):
+                                selected = " selected" if threshold == default_low_vix_threshold else ""
+                                fo.write(f"<option value='{threshold}'{selected}>{threshold}</option>")
+                            fo.write("</select>")
+                            default_total_count_days = int(
+                                low_vix_table_payload[str(default_low_vix_threshold)]["total_count_days"]
+                            )
+                            fo.write("<br/><span id='low-vix-total-count'>"
+                                     f"Total count days (low volatility): {default_total_count_days}</span>")
+                            fo.write("<div id='low-vix-table-container'>")
+                            fo.write(df_to_html_1_decimal(low_vix_threshold_dfs[default_low_vix_threshold],
+                                                          include_total_row=False))
+                            fo.write("</div>")
+                            fo.write("<script id='low-vix-table-payload' type='application/json'>")
+                            fo.write(json.dumps(low_vix_table_payload))
+                            fo.write("</script>")
+                            fo.write("<script>")
+                            fo.write("(function(){"
+                                     "const selector=document.getElementById('low-vix-threshold-select');"
+                                     "const payloadNode=document.getElementById('low-vix-table-payload');"
+                                     "if(!selector || !payloadNode){return;}"
+                                     "let tablePayloadByThreshold={};"
+                                     "try{tablePayloadByThreshold=JSON.parse(payloadNode.textContent || '{}');}"
+                                     "catch(_error){return;}"
+                                     "const updateLowVixTable=function(){"
+                                     "const payload=tablePayloadByThreshold[selector.value];"
+                                     "if(!payload){return;}"
+                                     "const total=document.getElementById('low-vix-total-count');"
+                                     "if(total){total.textContent='Total count days (low volatility): ' + payload.total_count_days;}"
+                                     "const tableContainer=document.getElementById('low-vix-table-container');"
+                                     "if(tableContainer){tableContainer.innerHTML=payload.table_html;}"
+                                     "};"
+                                     "selector.addEventListener('change', updateLowVixTable);"
+                                     "updateLowVixTable();"
+                                     "})();")
+                            fo.write("</script>")
+
+                        medium_vix_upper_threshold_dfs = self.__weekly_short_dte_change_medium_vix_upper_threshold_dfs
+                        if medium_vix_upper_threshold_dfs:
+                            default_medium_upper_threshold = (
+                                27
+                                if 27 in medium_vix_upper_threshold_dfs
+                                else sorted(medium_vix_upper_threshold_dfs.keys())[0]
+                            )
+                            medium_vix_table_payload = {}
+                            for threshold, threshold_df in sorted(medium_vix_upper_threshold_dfs.items()):
+                                medium_vix_table_payload[str(threshold)] = {
+                                    "total_count_days": int(self.__get_total_count_days(threshold_df)),
+                                    "table_html": df_to_html_1_decimal(threshold_df, include_total_row=False),
+                                }
+
+                            fo.write('<br/><br/><b>Medium volatility (lower threshold <= VIX < selected upper threshold)</b>')
+                            fo.write("<br/>Select medium-volatility upper VIX threshold: "
+                                     "<select id='medium-vix-upper-threshold-select'>")
+                            for threshold in sorted(medium_vix_upper_threshold_dfs.keys()):
+                                selected = " selected" if threshold == default_medium_upper_threshold else ""
+                                fo.write(f"<option value='{threshold}'{selected}>{threshold}</option>")
+                            fo.write("</select>")
+                            default_total_count_days = int(
+                                medium_vix_table_payload[str(default_medium_upper_threshold)]["total_count_days"]
+                            )
+                            fo.write("<br/><span id='medium-vix-total-count'>"
+                                     f"Total count days (medium volatility): {default_total_count_days}</span>")
+                            fo.write("<div id='medium-vix-table-container'>")
+                            fo.write(
+                                df_to_html_1_decimal(
+                                    medium_vix_upper_threshold_dfs[default_medium_upper_threshold],
+                                    include_total_row=False
+                                )
+                            )
+                            fo.write("</div>")
+                            fo.write("<script id='medium-vix-table-payload' type='application/json'>")
+                            fo.write(json.dumps(medium_vix_table_payload))
+                            fo.write("</script>")
+                            fo.write("<script>")
+                            fo.write("(function(){"
+                                     "const selector=document.getElementById('medium-vix-upper-threshold-select');"
+                                     "const payloadNode=document.getElementById('medium-vix-table-payload');"
+                                     "if(!selector || !payloadNode){return;}"
+                                     "let tablePayloadByThreshold={};"
+                                     "try{tablePayloadByThreshold=JSON.parse(payloadNode.textContent || '{}');}"
+                                     "catch(_error){return;}"
+                                     "const updateMediumVixTable=function(){"
+                                     "const payload=tablePayloadByThreshold[selector.value];"
+                                     "if(!payload){return;}"
+                                     "const total=document.getElementById('medium-vix-total-count');"
+                                     "if(total){total.textContent='Total count days (medium volatility): ' + payload.total_count_days;}"
+                                     "const tableContainer=document.getElementById('medium-vix-table-container');"
+                                     "if(tableContainer){tableContainer.innerHTML=payload.table_html;}"
+                                     "};"
+                                     "selector.addEventListener('change', updateMediumVixTable);"
+                                     "updateMediumVixTable();"
+                                     "})();")
+                            fo.write("</script>")
+
+                        high_vix_threshold_dfs = self.__weekly_short_dte_change_high_vix_threshold_dfs
+                        if high_vix_threshold_dfs:
+                            default_high_vix_threshold = (
+                                27 if 27 in high_vix_threshold_dfs else sorted(high_vix_threshold_dfs.keys())[0]
+                            )
+                            high_vix_table_payload = {}
+                            for threshold, threshold_df in sorted(high_vix_threshold_dfs.items()):
+                                high_vix_table_payload[str(threshold)] = {
+                                    "total_count_days": int(self.__get_total_count_days(threshold_df)),
+                                    "table_html": df_to_html_1_decimal(threshold_df, include_total_row=False),
+                                }
+
+                            fo.write('<br/><br/><b>High volatility (VIX >= selected threshold)</b>')
+                            fo.write("<br/>Select high-volatility VIX threshold: "
+                                     "<select id='high-vix-threshold-select'>")
+                            for threshold in sorted(high_vix_threshold_dfs.keys()):
+                                selected = " selected" if threshold == default_high_vix_threshold else ""
+                                fo.write(f"<option value='{threshold}'{selected}>{threshold}</option>")
+                            fo.write("</select>")
+                            default_total_count_days = int(
+                                high_vix_table_payload[str(default_high_vix_threshold)]["total_count_days"]
+                            )
+                            fo.write("<br/><span id='high-vix-total-count'>"
+                                     f"Total count days (high volatility): {default_total_count_days}</span>")
+                            fo.write("<div id='high-vix-table-container'>")
+                            fo.write(
+                                df_to_html_1_decimal(
+                                    high_vix_threshold_dfs[default_high_vix_threshold],
+                                    include_total_row=False
+                                )
+                            )
+                            fo.write("</div>")
+                            fo.write("<script id='high-vix-table-payload' type='application/json'>")
+                            fo.write(json.dumps(high_vix_table_payload))
+                            fo.write("</script>")
+                            fo.write("<script>")
+                            fo.write("(function(){"
+                                     "const selector=document.getElementById('high-vix-threshold-select');"
+                                     "const payloadNode=document.getElementById('high-vix-table-payload');"
+                                     "if(!selector || !payloadNode){return;}"
+                                     "let tablePayloadByThreshold={};"
+                                     "try{tablePayloadByThreshold=JSON.parse(payloadNode.textContent || '{}');}"
+                                     "catch(_error){return;}"
+                                     "const updateHighVixTable=function(){"
+                                     "const payload=tablePayloadByThreshold[selector.value];"
+                                     "if(!payload){return;}"
+                                     "const total=document.getElementById('high-vix-total-count');"
+                                     "if(total){total.textContent='Total count days (high volatility): ' + payload.total_count_days;}"
+                                     "const tableContainer=document.getElementById('high-vix-table-container');"
+                                     "if(tableContainer){tableContainer.innerHTML=payload.table_html;}"
+                                     "};"
+                                     "selector.addEventListener('change', updateHighVixTable);"
+                                     "updateHighVixTable();"
+                                     "})();")
+                            fo.write("</script>")
 
                 # monthly dte
                 figure_dte_change = None
@@ -1014,7 +1254,19 @@ class PriceAnalysis:
 
         if self.__weekly_short_dte_change_df is not None:
             st.write("Short DTE movements: position opened at any day's close and closed at the DTE close.")
-            print_df(self.__weekly_short_dte_change_df)
+            short_dte_change_dfs = self.__weekly_short_dte_change_dfs
+            if short_dte_change_dfs:
+                sorted_short_dtes = sorted(short_dte_change_dfs.keys())
+                default_idx = sorted_short_dtes.index(self.__WEEK_TRADING_DAYS) if self.__WEEK_TRADING_DAYS in sorted_short_dtes else len(sorted_short_dtes) - 1
+                selected_short_dte = st.selectbox("Select short DTE", sorted_short_dtes, index=default_idx)
+                selected_short_dte_df = short_dte_change_dfs[selected_short_dte]
+                short_dte_total_count_days = int(self.__get_total_count_days(selected_short_dte_df))
+                st.write(f"Total count days: {short_dte_total_count_days}")
+                print_df(selected_short_dte_df, include_total_row=False)
+            else:
+                short_dte_total_count_days = int(self.__get_total_count_days(self.__weekly_short_dte_change_df))
+                st.write(f"Total count days: {short_dte_total_count_days}")
+                print_df(self.__weekly_short_dte_change_df, include_total_row=False)
 
         # Monthly (dte-based) stats
         if self.__monthly_dte_change_df is not None:
@@ -1456,6 +1708,18 @@ class PriceAnalysis:
             change_list_df["vix_increment_list"],
         )
 
+    def __calc_DTE_statistics_for_dte_values(self, dte_values: list[int], max_change_pct: float) -> dict[int, pd.DataFrame]:
+        """
+        Calculate DTE statistics for multiple DTE values.
+        """
+
+        dte_stats = {}
+        for dte in sorted(set(dte_values)):
+            if dte <= 0 or dte >= self.__number_of_trading_days:
+                continue
+            dte_stats[int(dte)] = self.__calc_DTE_statistics(dte, max_change_pct)
+        return dte_stats
+
     def __calc_DTE_statistics_by_vix_regime(self, dte: int, max_change_pct: float) -> dict[str, pd.DataFrame]:
         """
         Calculate DTE statistics conditioned on VIX at position opening.
@@ -1494,6 +1758,87 @@ class PriceAnalysis:
             )
 
         return regime_dfs
+
+    def __calc_DTE_statistics_by_open_vix_threshold(self,
+                                                    dte: int,
+                                                    max_change_pct: float,
+                                                    thresholds: list[int],
+                                                    threshold_filter) -> dict[int, pd.DataFrame]:
+        """
+        Calculate DTE statistics for threshold-defined VIX regimes at position opening.
+        """
+
+        change_list_df, _, _ = self.__calc_change_DTE(dte)
+        change_list = change_list_df["change_list"]
+        drawdown_list = change_list_df["drawdown_list"]
+        vix_increment_list = change_list_df["vix_increment_list"]
+        open_vix_list = change_list_df["open_vix_list"]
+
+        threshold_dfs = {}
+        for threshold in sorted(set(thresholds)):
+            regime_changes = []
+            regime_drawdowns = []
+            regime_vix_increments = []
+            for change, drawdown, vix_increment, open_vix in zip(
+                    change_list, drawdown_list, vix_increment_list, open_vix_list):
+                if threshold_filter(open_vix, threshold):
+                    regime_changes.append(change)
+                    regime_drawdowns.append(drawdown)
+                    regime_vix_increments.append(vix_increment)
+
+            threshold_dfs[int(threshold)] = self.__build_dte_stats_dataframe(
+                dte,
+                max_change_pct,
+                regime_changes,
+                regime_drawdowns,
+                regime_vix_increments,
+            )
+        return threshold_dfs
+
+    def __calc_DTE_statistics_low_vix_threshold(self,
+                                                dte: int,
+                                                max_change_pct: float,
+                                                low_vix_thresholds: list[int]) -> dict[int, pd.DataFrame]:
+        """
+        Calculate DTE statistics for low-volatility regime defined as VIX < threshold.
+        """
+
+        return self.__calc_DTE_statistics_by_open_vix_threshold(
+            dte,
+            max_change_pct,
+            low_vix_thresholds,
+            lambda open_vix, threshold: open_vix < threshold,
+        )
+
+    def __calc_DTE_statistics_medium_vix_upper_threshold(self,
+                                                         dte: int,
+                                                         max_change_pct: float,
+                                                         medium_vix_upper_thresholds: list[int]) -> dict[int, pd.DataFrame]:
+        """
+        Calculate DTE statistics for medium-volatility regime defined as 20 <= VIX < threshold.
+        """
+
+        return self.__calc_DTE_statistics_by_open_vix_threshold(
+            dte,
+            max_change_pct,
+            medium_vix_upper_thresholds,
+            lambda open_vix, threshold: 20 <= open_vix < threshold,
+        )
+
+    def __calc_DTE_statistics_high_vix_threshold(self,
+                                                 dte: int,
+                                                 max_change_pct: float,
+                                                 high_vix_thresholds: list[int]) -> dict[int, pd.DataFrame]:
+        """
+        Calculate DTE statistics for high-volatility regime defined as VIX >= threshold.
+        """
+
+        return self.__calc_DTE_statistics_by_open_vix_threshold(
+            dte,
+            max_change_pct,
+            high_vix_thresholds,
+            lambda open_vix, threshold: open_vix >= threshold,
+        )
 
     def __calc_day_change_wrt_previous_day(self):
         """

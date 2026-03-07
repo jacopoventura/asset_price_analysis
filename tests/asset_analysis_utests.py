@@ -736,6 +736,16 @@ class TestPriceAnalysisIntegration(unittest.TestCase):
             "<center><b>Price change analysis with different DTEs</b></center>"
         )[0]
         self.assertNotIn("Total count days", monday_conditional_section)
+        short_dte_section = html.split(
+            "Short DTE: position opened at any day's close and closed at the DTE close"
+        )[1].split(
+            "Short DTE change according to VIX regime (VIX at position opening)"
+        )[0]
+        self.assertIn("Select DTE:", short_dte_section)
+        self.assertIn("short-dte-select", short_dte_section)
+        self.assertIn("short-dte-table-payload", short_dte_section)
+        self.assertIn("Total count days:", short_dte_section)
+        self.assertNotIn("Total count days</td>", short_dte_section)
         gap_section = html.split(
             "<center><b>Gap Up/Down Analysis</b></center>"
         )[1].split(
@@ -832,9 +842,21 @@ class TestPriceAnalysisIntegration(unittest.TestCase):
         self.assertIn("Asset data source: yahoo", html)
         self.assertIn("VIX data source: yahoo_download (^VIX)", html)
         self.assertIn("Short DTE change according to VIX regime", html)
-        self.assertIn("Low volatility (VIX < 20)", html)
-        self.assertIn("Medium volatility (20 <= VIX < 27)", html)
-        self.assertIn("High volatility (VIX >= 27)", html)
+        self.assertIn("short-dte-select", html)
+        self.assertIn("short-dte-table-payload", html)
+        self.assertIn("selector.addEventListener('change', updateShortDteTable)", html)
+        self.assertIn("Low volatility (VIX < selected threshold)", html)
+        self.assertIn("low-vix-threshold-select", html)
+        self.assertIn("low-vix-table-payload", html)
+        self.assertIn("selector.addEventListener('change', updateLowVixTable)", html)
+        self.assertIn("Medium volatility (lower threshold <= VIX < selected upper threshold)", html)
+        self.assertIn("medium-vix-upper-threshold-select", html)
+        self.assertIn("medium-vix-table-payload", html)
+        self.assertIn("selector.addEventListener('change', updateMediumVixTable)", html)
+        self.assertIn("High volatility (VIX >= selected threshold)", html)
+        self.assertIn("high-vix-threshold-select", html)
+        self.assertIn("high-vix-table-payload", html)
+        self.assertIn("selector.addEventListener('change', updateHighVixTable)", html)
         self.assertEqual("yahoo_download (^VIX)", analysis.get_vix_source())
 
     def test_weekly_conditional_stats_group_by_year_and_week(self):
