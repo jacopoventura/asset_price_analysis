@@ -450,7 +450,7 @@ class TestPriceAnalysisIntegration(unittest.TestCase):
 
         self.assertAlmostEqual(100.0, negative_frequency_sum, places=6)
         self.assertAlmostEqual(100.0, positive_frequency_sum, places=6)
-        self.assertEqual(2, bins_dict["13"]["cumulative negative"]["count days"])
+        self.assertEqual(2, bins_dict["15"]["cumulative negative"]["count days"])
         self.assertEqual(1, bins_dict["10"]["cumulative negative"]["count days"])
         self.assertEqual(1, bins_dict["40+"]["cumulative negative"]["count days"])
 

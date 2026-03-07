@@ -72,7 +72,7 @@ class PriceAnalysis:
         self.__NUMBER_WEEKS_PER_YEAR = 52
         self.__STEP = 1  # step to calculate the cumulative distribution
         self.__BINS_DAILY_CHANGE = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]
-        self.__BINS_VIX = [vix for vix in range(10, 41, 3)]
+        self.__BINS_VIX = [vix for vix in range(10, 45, 5)]
 
         self.__PLOT_COLUMN_WIDTH = 0.75
 
