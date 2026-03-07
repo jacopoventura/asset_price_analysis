@@ -710,8 +710,8 @@ class TestPriceAnalysisIntegration(unittest.TestCase):
             html = output_file.read()
 
         self.assertIn("Daily and weekly change stats", html)
-        self.assertIn("Open gap-up / down analysis", html)
-        self.assertIn("Daily change according to VIX", html)
+        self.assertIn("Gap Up/Down Analysis", html)
+        self.assertIn("Daily Change by VIX Level", html)
         self.assertIn("Total count days", html)
         self.assertIn("Daily change (CLOSE with respect to the previous day CLOSE) - total count days:", html)
         self.assertIn("Weekly change (Friday CLOSE with respect to the previous week Friday CLOSE or Monday OPEN)", html)
@@ -737,9 +737,9 @@ class TestPriceAnalysisIntegration(unittest.TestCase):
         )[0]
         self.assertNotIn("Total count days", monday_conditional_section)
         gap_section = html.split(
-            "<center><b>Open gap-up / down analysis</b></center>"
+            "<center><b>Gap Up/Down Analysis</b></center>"
         )[1].split(
-            "<center><b>Daily change according to VIX</b></center>"
+            "<center><b>Daily Change by VIX Level</b></center>"
         )[0]
         self.assertNotIn("Total count days</td>", gap_section)
         self.assertIn("Asset data source: yahoo", html)

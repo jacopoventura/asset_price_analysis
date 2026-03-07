@@ -107,7 +107,7 @@ class PriceAnalysis:
 
         date_start_vix = datetime.datetime(1990, 1, 2)
         if self.__date_start < date_start_vix:
-            print("WARNING: start date before first available date for VIX: VIX wil not be queried only from 02/01/1990")
+            print("WARNING: start date before first available VIX date: VIX will be queried only from 02/01/1990")
             self.__date_start_vix = date_start_vix
         else:
             self.__date_start_vix = self.__date_start
@@ -347,7 +347,7 @@ class PriceAnalysis:
         for idx, close_pct in enumerate(x_cpf_negative_open):
             self.__stats_negative_gap[">+" + str(gap) + " %"][str(int(close_pct * 10) / 10) + "%"] = cpf[idx]
 
-        # all negative gap-ups
+        # all negative gap-downs
         close_list = [daily_close_pct[i] for i in range(len(daily_close_pct)) if daily_open_pct[i] < 0]
         key = "negative open %"
         self.__stats_negative_gap[">0 %"] = {"gap": key, "count days": len(close_list)}
@@ -900,7 +900,7 @@ class PriceAnalysis:
 
                 # ================================= GAP UP / DOWN STATS ===================================
                 fo.write('<br/><br/><br/>')
-                fo.write("<center><b>Open gap-up / down analysis</b></center>")
+                fo.write("<center><b>Gap Up/Down Analysis</b></center>")
                 fo.write('<br/>')
                 fo.write("<br/><b>Cumulative probability of the daily change</b> when a <u>positive market opening</u> occurs:")
                 fo.write('<br/><br/>')
@@ -911,7 +911,7 @@ class PriceAnalysis:
                 gap_up_df = self.__trim_gap_table_columns(gap_up_df)
                 fo.write(df_to_html_1_decimal(gap_up_df, include_total_row=False))
                 fo.write("<b>HOW TO USE THE TABLE:</b>")
-                fo.write("<br/> - row index: range of the opening gap-up")
+                fo.write("<br/> - column <b>gap</b>: range of the opening gap up")
                 fo.write("<br/> - column: daily change [%] (close with respect to the previous day's close)")
                 fo.write("<br/> - cell: <u>cumulative probability [%]</u> that the close is <b>lower or equal</b> the change in the column header")
                 fo.write("<br> - USAGE: observe the open gap. Choose the daily sell put strike based on the close pct with the lowest probability.")
@@ -926,14 +926,14 @@ class PriceAnalysis:
                 gap_down_df = self.__trim_gap_table_columns(gap_down_df)
                 fo.write(df_to_html_1_decimal(gap_down_df, include_total_row=False))
                 fo.write("<b>HOW TO USE THE TABLE:</b>")
-                fo.write("<br/> - row index: range of the opening gap-down")
+                fo.write("<br/> - column <b>gap</b>: range of the opening gap down")
                 fo.write("<br/> - column: daily change [%] (close with respect to the previous day's close)")
                 fo.write("<br/> - cell: <u>cumulative probability [%]</u> that the close is <b>lower or equal</b> the change in the column header")
                 fo.write("<br> - USAGE: observe the open gap. Choose the daily sell put strike based on the close pct with the lowest probability.")
 
                 # ================================= DAILY CHANGE VS. VIX STATS ===================================
                 fo.write('<br/><br/><br/>')
-                fo.write("<center><b>Daily change according to VIX</b></center>")
+                fo.write("<center><b>Daily Change by VIX Level</b></center>")
                 fo.write('<br/>')
                 negative_day_vix_df = pd.DataFrame([self.__dict_daily_change_vix_bins[i]["cumulative negative"] for i in
                                                     self.__dict_daily_change_vix_bins.keys()])
@@ -949,7 +949,7 @@ class PriceAnalysis:
                 positive_vix_count_days = int(self.__get_total_count_days(positive_day_vix_df))
                 total_vix_count_days = negative_vix_count_days + positive_vix_count_days
                 fo.write("<br/>Total count days across the two VIX tables: " + str(total_vix_count_days))
-                fo.write("<br/><b>Cumulative probability</b> of the <b>daily NEGATIVE change</b> according to the <u>vix level</u>:")
+                fo.write("<br/><b>Cumulative probability</b> of the <b>daily negative change</b> by <u>VIX level</u>:")
                 fo.write("<br/>Total count days (daily NEGATIVE change): " + str(negative_vix_count_days))
                 fo.write(df_to_html_1_decimal(negative_day_vix_df, include_total_row=False))
                 fo.write("<b>HOW TO USE THE TABLE:</b>")
@@ -957,7 +957,7 @@ class PriceAnalysis:
                 fo.write("<br/> - column: daily change [%] (close with respect to the previous day's close)")
                 fo.write("<br/> - cell: <u>cumulative probability [%]</u> that the close is <b>lower or equal</b> the change in the column header")
                 fo.write('<br/>')
-                fo.write("<br/><b>Cumulative probability</b> of the <b>daily POSITIVE change</b> according to the <u>vix level</u>:")
+                fo.write("<br/><b>Cumulative probability</b> of the <b>daily positive change</b> by <u>VIX level</u>:")
                 fo.write("<br/>Total count days (daily POSITIVE change): " + str(positive_vix_count_days))
                 fo.write(df_to_html_1_decimal(positive_day_vix_df, include_total_row=False))
                 fo.write("<b>HOW TO USE THE TABLE:</b>")
@@ -1030,7 +1030,7 @@ class PriceAnalysis:
         st.write(" ")
         st.write(" ")
         st.write(" ")
-        st.markdown("<h4 style='text-align: center; '>Gap UP / DOWN analysis </h4>", unsafe_allow_html=True)
+        st.markdown("<h4 style='text-align: center; '>Gap Up/Down Analysis</h4>", unsafe_allow_html=True)
         st.write(f"The tables in this section contain the **cumulative probability** of the change in price up to a certain level (column), "
                  f"for a given open gap (market open).")
 
@@ -1050,7 +1050,7 @@ class PriceAnalysis:
         gap_up_df = self.__trim_gap_table_columns(gap_up_df)
         print_df(gap_up_df, include_total_row=False)
         st.write("HOW TO USE THE TABLE:")
-        st.write("- row index: range of the opening gap-up")
+        st.write("- column `gap`: range of the opening gap up")
         st.write("- column: daily change [%] (close with respect to the previous day's close)")
         st.write("- cell: cumulative probability [%] that the close is lower or equal the change in the column header")
         st.write(f"- **usage**: observe the open gap. Choose the daily sell put strike based on the close pct with the lowest probability.")
@@ -1073,7 +1073,7 @@ class PriceAnalysis:
         gap_down_df = self.__trim_gap_table_columns(gap_down_df)
         print_df(gap_down_df, include_total_row=False)
         st.write("HOW TO USE THE TABLE:")
-        st.write("- row index: range of the opening gap-down")
+        st.write("- column `gap`: range of the opening gap down")
         st.write("- column: daily change [%] (close with respect to the previous day's close")
         st.write("- cell: cumulative probability [%] that the close is lower or equal the change in the column header")
         st.write(f"- **usage**: observe the open gap. Choose the daily sell put strike based on the close pct with the lowest probability.")
@@ -1082,12 +1082,12 @@ class PriceAnalysis:
         st.write(" ")
         st.write(" ")
         st.write(" ")
-        st.markdown("<h4 style='text-align: center; '>Daily price change given the VIX</h4>", unsafe_allow_html=True)
+        st.markdown("<h4 style='text-align: center; '>Daily Change by VIX Level</h4>", unsafe_allow_html=True)
         st.write(f"The tables in this section contain the **cumulative probability** of the change in price up to a certain level (column), "
                  f"given a certain VIX level.")
 
         st.write(" ")
-        st.write("Daily NEGATIVE change given the vix level:")
+        st.write("Daily negative change by VIX level:")
 
         # check if ND (str) are present when no data are available and change to NAN
         for key in self.__dict_daily_change_vix_bins.keys():
@@ -1116,7 +1116,7 @@ class PriceAnalysis:
 
         st.write(" ")
         st.write(" ")
-        st.write("Daily POSITIVE change according to the vix level:")
+        st.write("Daily positive change by VIX level:")
         st.write(f"Total count days (daily POSITIVE change): {positive_vix_count_days}")
         print_df(positive_day_vix_df, include_total_row=False)
         st.write("HOW TO USE THE TABLE:")
