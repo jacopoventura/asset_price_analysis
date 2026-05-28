@@ -8,13 +8,8 @@ st.markdown('<div style="text-align: justify">This application analyzes the pric
 
 st.markdown('<div> </div> ', unsafe_allow_html=True)
 st.markdown('<h3 style="text-align: center;">Problem</h3>', unsafe_allow_html=True)
-st.markdown('<div style="text-align: justify">When trading with options, the greek <i>delta</i> provides an empirical estimate of the trade success '
-            'probability.</div>', unsafe_allow_html=True)
-st.markdown('<div style="text-align: justify">However, unexpected volatility can occur just right after the trade open, '
-            'with the underlying price going in the opposite trade direction. When this happens, '
-            'it is crucial for the trader to stay calm and handle the trade correctly.</div>', unsafe_allow_html=True)
-st.markdown('<div style="text-align: justify">This is possible by knowing the probability of the price change of the underlying asset. '
-            'With this data, better strike levels can be chosen.</div>', unsafe_allow_html=True)
+st.markdown('<div style="text-align: justify">I want to analyze the price movement of liquid assets to optimze the buy the deep method, 
+             by analyzing how deep are corrections in the stock market.</div>', unsafe_allow_html=True)
 
 st.markdown('<div> </div> ', unsafe_allow_html=True)
 st.markdown('<h3 style="text-align: center;">Solution</h3>', unsafe_allow_html=True)
