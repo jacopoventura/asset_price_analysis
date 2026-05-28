@@ -35,7 +35,7 @@ if __name__ == '__main__':
     date_end = st.date_input("End date: ", value=datetime.datetime(2023, 1, 20))
     date_end = datetime.datetime(date_end.year, date_end.month, date_end.day)
 
-    dte_long = st.number_input("Number of trading days of the sell put debit:", value=23)
+    dte_long = st.number_input("Number of (market open) days:", value=23)
 
     # Run analysis
     ticker_analysis = PriceAnalysis(ticker, date_start, date_end, dte_long, path_to_html)
